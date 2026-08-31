@@ -1,0 +1,6 @@
+{
+  "name": "Cubao Cathedral - Immaculate Conception Cathedral",
+  "description": "Official website of the Immaculate Conception Cathedral of Cubao (ICCC), Diocese of Cubao — Mass schedules, Sacraments, Ministries, Events calendar, News, Facilities, and Parish office inquiries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

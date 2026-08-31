@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #0171bb;
+  --color-brand-blue-dark: #015f9e;
+  --color-brand-blue-darker: #014c7e;
+  --color-brand-blue-light: #e6f3fa;
+  --color-brand-blue-subtle: #f0f8fd;
+
+  --color-blue-50: #f0f7fc;
+  --color-blue-100: #e0eff8;
+  --color-blue-200: #b9dff2;
+  --color-blue-300: #7cc5ea;
+  --color-blue-400: #37a7dd;
+  --color-blue-500: #0171bb;
+  --color-blue-600: #0171bb;
+  --color-blue-700: #0162a3;
+  --color-blue-800: #01528a;
+  --color-blue-900: #0171bb;
+  --color-blue-950: #014370;
+}
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  
+  h1, h2, h3, .font-cathedral {
+    font-family: 'Cinzel', serif;
+  }
+
+  .font-scriptural {
+    font-family: 'Cormorant Garamond', serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Gold glow and subtle liturgical animations */
+@keyframes candleFlicker {
+  0%, 100% { transform: scale(1) translateY(0); opacity: 0.95; filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.7)); }
+  50% { transform: scale(1.08) translateY(-1px); opacity: 1; filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.9)); }
+}
+
+.candle-flame {
+  animation: candleFlicker 2.2s infinite ease-in-out alternate;
+}
+
