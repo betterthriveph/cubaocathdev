@@ -411,6 +411,60 @@ class FacilityService {
   }
 
   /**
+   * Retrieves public booking details for payment page
+   */
+  async getPublicReservationForPayment(referenceCode: string): Promise<{
+    success: boolean;
+    reservation?: {
+      referenceCode: string;
+      applicantName: string;
+      facility: string;
+      eventDate: string;
+      startTime: string;
+      endTime: string;
+      agreedAmount: number;
+      amountDue: number;
+      paymentDeadline?: string | null;
+      paymentInstructions: string;
+      currentPaymentStatus: string;
+      status: string;
+      holdExpiresAt?: string | null;
+      isExpired?: boolean;
+      paymentSubmittedAt?: string | null;
+    };
+    error?: string;
+  }> {
+    try {
+      const res = await fetch(
+        `/.netlify/functions/upload-proof-of-payment?referenceCode=${encodeURIComponent(referenceCode.trim())}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok && data.success && data.reservation) {
+        return {
+          success: true,
+          reservation: data.reservation,
+        };
+      }
+
+      return {
+        success: false,
+        error: data.error || (res.status === 404 ? 'Booking not found.' : 'Failed to retrieve reservation.'),
+      };
+    } catch (err: any) {
+      console.error('Error fetching public reservation for payment:', err);
+      return {
+        success: false,
+        error: err?.message || 'Network error fetching reservation details.',
+      };
+    }
+  }
+
+  /**
    * Uploads Proof of Payment (Public applicant flow)
    */
   async uploadProofOfPayment(payload: {

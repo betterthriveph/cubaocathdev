@@ -22,6 +22,7 @@ import { GrottoFacilityPage } from './components/facilities/GrottoFacilityPage';
 import { ParishCenterFacilityPage } from './components/facilities/ParishCenterFacilityPage';
 import { NativityChapelFacilityPage } from './components/facilities/NativityChapelFacilityPage';
 import { FacilityDetailPage } from './components/facilities/FacilityDetailPage';
+import { PaymentProofUploadPage } from './components/facilities/PaymentProofUploadPage';
 import { AdminApp } from './components/admin/AdminApp';
 import { SetPasswordPage } from './components/admin/SetPasswordPage';
 import { ResetPasswordPage } from './components/admin/ResetPasswordPage';
@@ -134,6 +135,10 @@ function AppContent() {
           <Route path="/facilities/parish-center" element={<ParishCenterFacilityPage />} />
           <Route path="/facilities/grotto" element={<GrottoFacilityPage />} />
           <Route path="/facilities/nativity-chapel" element={<NativityChapelFacilityPage />} />
+          <Route path="/facilities/payment/:reservationReference" element={<PaymentProofUploadPage />} />
+          <Route path="/facilities/payment" element={<PaymentProofUploadPage />} />
+          <Route path="/facilities/payment-proof/:referenceCode" element={<PaymentProofUploadPage />} />
+          <Route path="/facilities/payment-proof" element={<PaymentProofUploadPage />} />
           <Route path="/facilities/:slug" element={<FacilityDetailPage />} />
 
           {/* News, Announcements & Calendar */}
