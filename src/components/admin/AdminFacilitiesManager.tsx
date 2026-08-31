@@ -7,12 +7,15 @@ import {
   Check, 
   Sparkles, 
   Info, 
-  ArrowUpRight, 
   RotateCcw, 
-  Maximize2, 
   Layers, 
   Flame,
+  DollarSign,
+  ShieldCheck,
+  Save,
   CheckCircle2,
+  Calendar,
+  Clock,
   ExternalLink
 } from 'lucide-react';
 import { facilityService } from '../../services/facilityService';
@@ -37,12 +40,20 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('parish-center');
   
   // Active facility being edited
-  const activeFacility = facilities.find(f => f.id === selectedFacilityId) || facilities[0];
+  const activeFacility = facilities.find(f => f.id === selectedFacilityId || f.slug === selectedFacilityId) || facilities[0];
 
-  // Local form states
+  // Local form states - Media CMS
   const [heroImageInput, setHeroImageInput] = useState('');
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
+
+  // Local form states - Master Pricing CMS
+  const [basePrice, setBasePrice] = useState<number>(14000);
+  const [depositAmount, setDepositAmount] = useState<number>(4200);
+  const [additionalCharges, setAdditionalCharges] = useState<number>(1500);
+  const [pricingNotes, setPricingNotes] = useState<string>('');
+  const [pricingStatus, setPricingStatus] = useState<'active' | 'inactive'>('active');
+  const [savingPricing, setSavingPricing] = useState(false);
 
   // Subscribe to facility changes
   useEffect(() => {
@@ -55,8 +66,13 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
   // Sync state when facility tab changes
   useEffect(() => {
     if (activeFacility) {
-      setHeroImageInput(activeFacility.heroImage);
+      setHeroImageInput(activeFacility.heroImage || '');
       setGalleryImages(activeFacility.gallery || []);
+      setBasePrice(activeFacility.basePrice || 0);
+      setDepositAmount(activeFacility.depositAmount || 0);
+      setAdditionalCharges(activeFacility.additionalCharges || 0);
+      setPricingNotes(activeFacility.pricingNotes || '');
+      setPricingStatus(activeFacility.pricingStatus || 'active');
     }
   }, [selectedFacilityId, facilities]);
 
@@ -86,6 +102,22 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
     showToast(`Photo removed from ${activeFacility.name} gallery.`);
   };
 
+  const handleSaveMasterPricing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPricing(true);
+
+    const result = await facilityService.updateFacilityPricing(activeFacility.id, {
+      basePrice: Number(basePrice),
+      depositAmount: Number(depositAmount),
+      additionalCharges: Number(additionalCharges),
+      pricingNotes: pricingNotes.trim(),
+      pricingStatus,
+    });
+
+    setSavingPricing(false);
+    showToast(result.message || `Master pricing saved for ${activeFacility.name}!`);
+  };
+
   const handleResetDefaults = () => {
     if (window.confirm('Reset all facilities photos and gallery to default mock specifications?')) {
       facilityService.resetToDefaults();
@@ -101,13 +133,13 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
         <div className="space-y-1">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold uppercase tracking-wider">
             <Building2 className="w-3 h-3" />
-            <span>Cathedral Spaces & Photo Gallery CMS</span>
+            <span>Master Facility & Pricing CMS</span>
           </div>
           <h2 className="font-cathedral text-xl sm:text-2xl font-bold text-slate-900">
-            Facilities Media & Gallery Manager
+            Cathedral Facilities & Master Rates
           </h2>
           <p className="text-xs text-slate-600">
-            Manage high-resolution hero banners, photo galleries, and dimension specifications for each Cathedral space.
+            Control master booking rates, deposit policies, hero banners, and photo galleries synchronized with Netlify Database.
           </p>
         </div>
 
@@ -130,7 +162,7 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
             key={fac.id}
             onClick={() => setSelectedFacilityId(fac.id)}
             className={`px-4 py-3 rounded-2xl border text-xs font-bold transition-all flex items-center gap-2.5 shrink-0 cursor-pointer ${
-              selectedFacilityId === fac.id
+              selectedFacilityId === fac.id || selectedFacilityId === fac.slug
                 ? 'bg-[#0171bb] text-white border-[#0171bb] shadow-md'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
             }`}
@@ -142,14 +174,145 @@ export const AdminFacilitiesManager: React.FC<AdminFacilitiesManagerProps> = ({ 
             <div className="text-left">
               <span className="block leading-tight">{fac.name}</span>
               <span className={`text-[10px] font-normal block ${selectedFacilityId === fac.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                {fac.subname.split('|')[0]}
+                ₱{(fac.basePrice || 0).toLocaleString()} • {fac.pricingStatus || 'active'}
               </span>
             </div>
           </button>
         ))}
       </div>
 
-      {/* Main Editing Card for Selected Facility */}
+      {/* MASTER PRICING CONFIGURATION CARD */}
+      <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="font-cathedral text-base font-bold text-slate-900 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              Master Pricing & Reservation Deposit Rates ({activeFacility?.name})
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              These rates populate public inquiry quotes, deposit computations, and booking contracts.
+            </p>
+          </div>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+            pricingStatus === 'active' 
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              : 'bg-slate-100 text-slate-600 border border-slate-200'
+          }`}>
+            Status: {pricingStatus}
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveMasterPricing} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Standard Master Base Rate (₱): *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">₱</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  required
+                  value={basePrice}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setBasePrice(val);
+                    // auto set 30% deposit guideline
+                    if (depositAmount === 0 || depositAmount === Math.round(basePrice * 0.3)) {
+                      setDepositAmount(Math.round(val * 0.3));
+                    }
+                  }}
+                  className="w-full pl-7 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#0171bb] font-bold text-slate-900 font-mono"
+                />
+              </div>
+              <span className="text-[10px] text-slate-500">Standard 4-hour air-conditioned block.</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Reservation Deposit Due (₱): *
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">₱</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  required
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(Number(e.target.value))}
+                  className="w-full pl-7 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#0171bb] font-bold text-emerald-700 font-mono"
+                />
+              </div>
+              <span className="text-[10px] text-slate-500">Required deposit to hold slot (typically 30%).</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Overtime / Additional Hourly Rate (₱):
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">₱</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={additionalCharges}
+                  onChange={(e) => setAdditionalCharges(Number(e.target.value))}
+                  className="w-full pl-7 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#0171bb] font-bold text-slate-900 font-mono"
+                />
+              </div>
+              <span className="text-[10px] text-slate-500">Applied for extensions beyond block time.</span>
+            </div>
+
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="sm:col-span-3 space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Pricing Notes & Public Inclusions:
+              </label>
+              <input
+                type="text"
+                value={pricingNotes}
+                onChange={(e) => setPricingNotes(e.target.value)}
+                placeholder="e.g. Includes pro audio technician, standby generator, and 30-min setup buffer."
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#0171bb]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Pricing Status:
+              </label>
+              <select
+                value={pricingStatus}
+                onChange={(e) => setPricingStatus(e.target.value as any)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0171bb]"
+              >
+                <option value="active">Active (Accepting Bookings)</option>
+                <option value="inactive">Inactive (Suspended / Renovation)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={savingPricing}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              <span>{savingPricing ? 'Saving to Database...' : `Save Master Rates for ${activeFacility?.name}`}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Main Editing Card for Selected Facility - Media CMS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Column: Header/Hero Banner Photo & Sizing Guide */}

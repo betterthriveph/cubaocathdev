@@ -114,21 +114,123 @@ export interface SacramentInfo {
 }
 
 export interface Facility {
-  id: 'grotto' | 'parish-center' | 'nativity-chapel' | 'crypt' | 'mortuary';
+  id: string;
+  slug?: string;
   name: string;
   subname: string;
   tagline: string;
   heroImage: string;
   gallery: string[];
   description: string;
-  significance: string;
-  capacity?: string;
+  significance?: string;
+  capacity?: string | number;
   operatingHours: string;
   amenities: string[];
   guidelines: string[];
   suitableFor: string[];
   rateInfo?: string;
   locationDetails: string;
+  // Master pricing controls (Page 2)
+  basePrice?: number;
+  depositAmount?: number;
+  additionalCharges?: number;
+  pricingNotes?: string;
+  pricingStatus?: 'active' | 'inactive';
+}
+
+export type InquiryStatus = 'new' | 'under_review' | 'approved' | 'declined' | 'cancelled';
+
+export interface FacilityInquiry {
+  id: string;
+  referenceCode: string;
+  facilityId: string;
+  facilityName?: string;
+  facilitySlug?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  requestedDate: string;
+  startTime: string;
+  endTime: string;
+  purpose: string;
+  message?: string;
+  status: InquiryStatus;
+  quotedPrice?: number;
+  adminNotes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ReservationStatus = 
+  | 'pending'
+  | 'awaiting_payment'
+  | 'payment_submitted'
+  | 'confirmed'
+  | 'completed'
+  | 'hold_expired'
+  | 'cancelled'
+  | 'declined';
+
+export type PaymentStatus = 
+  | 'unpaid'
+  | 'submitted'
+  | 'verified'
+  | 'refunded'
+  | 'rejected';
+
+export interface FacilityReservation {
+  id: string;
+  referenceCode: string;
+  inquiryId?: string;
+  facilityId: string;
+  facilityName?: string;
+  customerName?: string;
+  customerEmail?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  reservationDate?: string;
+  reservedDate?: string;
+  startTime: string;
+  endTime: string;
+  purpose: string;
+  status: ReservationStatus;
+  amount?: number;
+  agreedPrice?: number;
+  agreedAmount?: number;
+  depositDue?: number;
+  paymentStatus?: PaymentStatus;
+  paymentReference?: string;
+  paymentProofUrl?: string;
+  paymentSubmittedAt?: string;
+  paymentDeadline?: string;
+  paymentInstructions?: string;
+  paymentMethodDetails?: string;
+  paymentNotes?: string;
+  holdExpiresAt?: string;
+  adminNotes?: string;
+  confirmedAt?: string;
+  confirmationEmailSentAt?: string;
+  reminderSentAt?: string;
+  reminderStatus?: string;
+  feedbackEmailSentAt?: string;
+  feedbackStatus?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AvailabilityCheckParams {
+  facilityIdOrSlug: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface AvailabilityCheckResponse {
+  available: boolean;
+  message?: string;
+  conflictingStatus?: string;
+  holdExpiresAt?: string;
 }
 
 export interface Ministry {

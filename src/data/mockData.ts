@@ -106,6 +106,11 @@ export const DEV_MOCK_FACILITIES: Facility[] = [
     ],
     rateInfo: 'Church-Connected: Small ₱900/hr, Big ₱1,200/hr, Multi-Purpose ₱3,500/hr | Non-Church: Small ₱1,400/hr, Big ₱1,800/hr, Multi-Purpose ₱5,000/hr.',
     locationDetails: 'Cathedral Compound, Building B (Opposite the Parish Office), Lantana Street.',
+    basePrice: 14000,
+    depositAmount: 4200,
+    additionalCharges: 1500,
+    pricingNotes: 'Base 4-hour air-conditioned use with pro audio system. 30% initial deposit due upon approval.',
+    pricingStatus: 'active',
   },
   {
     id: 'grotto',
@@ -145,6 +150,11 @@ export const DEV_MOCK_FACILITIES: Facility[] = [
     ],
     rateInfo: 'Ascension: ₱12,000/day • Assumption: ₱10,000/day (Includes air-conditioning and liturgical audio setup).',
     locationDetails: 'Cathedral East Courtyard, adjacent to the Parish Pastoral Office and Main Sanctuary.',
+    basePrice: 12000,
+    depositAmount: 3600,
+    additionalCharges: 1000,
+    pricingNotes: 'Daily chapel use with liturgical sound. Reservation deposit due within 2 hours of payment instruction.',
+    pricingStatus: 'active',
   },
   {
     id: 'nativity-chapel',
@@ -184,6 +194,11 @@ export const DEV_MOCK_FACILITIES: Facility[] = [
     ],
     rateInfo: 'Estimated Stipend/Donation: ₱8,000 – ₱15,000 depending on celebration type and liturgical inclusions.',
     locationDetails: 'Left wing of the Cathedral Main Facade, accessible through the side portico.',
+    basePrice: 15000,
+    depositAmount: 4500,
+    additionalCharges: 2000,
+    pricingNotes: 'Includes dedicated audio technician, liturgical lighting, and sacristy prep access.',
+    pricingStatus: 'active',
   },
   {
     id: 'crypt',
@@ -216,6 +231,11 @@ export const DEV_MOCK_FACILITIES: Facility[] = [
     ],
     rateInfo: 'Single Niche (up to 2 urns): ₱65,000 perpetual lease. Family Niche (up to 4 urns): ₱110,000.',
     locationDetails: 'Cathedral Basement Level, entrance via the Crypt Staircase at the West Nave.',
+    basePrice: 8000,
+    depositAmount: 2400,
+    additionalCharges: 500,
+    pricingNotes: 'Crypt memorial Mass reservation and sanctuary maintenance coverage.',
+    pricingStatus: 'active',
   },
 ];
 
@@ -298,121 +318,12 @@ export const DEV_MOCK_PARISH_EVENTS: ParishEvent[] = [
 ];
 
 /* ==========================================================================
-   4. SAMPLE FACILITY BOOKINGS (ADMIN WORKFLOW TESTING)
+   4. SAMPLE FACILITY BOOKINGS (EMPTY INITIAL DATA)
    ========================================================================== */
-export const DEV_MOCK_FACILITY_BOOKINGS: FacilityBooking[] = [
-  {
-    id: 'fb-001',
-    referenceCode: 'PC-829104',
-    facilityId: 'parish-center-multipurpose',
-    facilityName: 'Parish Center – Multi-Purpose Hall',
-    eventName: 'De Vera & Ramirez Nuptial Banquet',
-    clientName: 'Atty. Marco De Vera',
-    clientOrganization: 'Private Client',
-    clientEmail: 'marco.devera@gmail.com',
-    clientPhone: '+63 917 882 3901',
-    eventDate: '2026-09-20',
-    timeSlot: '4 Hours (Non-Church Rate)',
-    pax: 140,
-    totalAmount: 20000,
-    depositAmount: 6000,
-    depositStatus: 'Paid',
-    status: 'Confirmed',
-    addons: ['Standard Air Conditioning', 'Pro Audio & Stage Mics'],
-    livestreaming: false,
-    notes: 'Approved reservation. Caterer setup starts at 2:00 PM.',
-    createdDate: '2026-08-10',
-    paymentRequestedDate: '2026-08-11',
-    paymentDetailsSent: true,
-  },
-  {
-    id: 'fb-002',
-    referenceCode: 'GROTTO-492015',
-    facilityId: 'grotto-ascension',
-    facilityName: 'The Cathedral Grottos – Chapel of the Ascension',
-    eventName: 'Couples for Christ Chapter Recollection',
-    clientName: 'Bro. Edgardo Santos',
-    clientOrganization: 'Couples for Christ – Cubao Chapter',
-    clientEmail: 'edgar.santos@cfccubao.org',
-    clientPhone: '+63 920 951 8841',
-    eventDate: '2026-09-27',
-    timeSlot: 'Full Day (8:00 AM – 5:00 PM)',
-    pax: 65,
-    totalAmount: 12000,
-    depositAmount: 3600,
-    depositStatus: 'Paid',
-    status: 'Confirmed',
-    addons: ['Chapel Sound System', 'Parish Media Livestreaming'],
-    livestreaming: true,
-    notes: 'Recollection with holy hour at 3:00 PM.',
-    createdDate: '2026-08-15',
-    paymentRequestedDate: '2026-08-16',
-    paymentDetailsSent: true,
-  },
-  {
-    id: 'fb-003',
-    referenceCode: 'NC-301928',
-    facilityId: 'nativity-chapel',
-    facilityName: 'Nativity Chapel',
-    eventName: 'Golden Wedding Anniversary Thanksgiving Mass (Mr. & Mrs. Tan)',
-    clientName: 'Dr. Roberto Tan & Dra. Elena Tan',
-    clientOrganization: 'Family Liturgy',
-    clientEmail: 'roberto.tan@gmail.com',
-    clientPhone: '+63 918 334 2209',
-    eventDate: '2026-10-04',
-    timeSlot: 'Morning (9:30 AM – 12:30 PM)',
-    pax: 120,
-    totalAmount: 10000,
-    depositAmount: 3000,
-    depositStatus: 'Unpaid',
-    status: 'Pending Review',
-    addons: ['Liturgical Sacristy Preparation', 'Sound System & Wireless Mics', 'Choir Area Setup'],
-    livestreaming: false,
-    notes: 'Submitted via Nativity Chapel Online Reservation Form. Requesting Rev. Fr. Dennis Soriano as presider.',
-    createdDate: '2026-08-28',
-  }
-];
+export const DEV_MOCK_FACILITY_BOOKINGS: FacilityBooking[] = [];
 
 /* ==========================================================================
-   5. SAMPLE CERTIFICATE REQUESTS
+   5. SAMPLE CERTIFICATE REQUESTS (EMPTY INITIAL DATA)
    ========================================================================== */
-export const DEV_MOCK_CERTIFICATE_REQUESTS: CertificateRequest[] = [
-  {
-    id: 'cert-001',
-    referenceCode: 'CERT-910234',
-    documentType: 'Baptismal',
-    fullName: 'Juan Carlo Mendoza',
-    birthday: '1998-05-12',
-    fatherName: 'Roberto Mendoza',
-    motherName: 'Lourdes Santos',
-    sacramentDate: '1998-07-15',
-    purpose: 'Marriage Canonical Requirement',
-    requestedBy: 'Juan Carlo Mendoza',
-    contactEmail: 'jc.mendoza@gmail.com',
-    contactPhone: '+63 917 555 1234',
-    status: 'Ready for Pickup',
-    createdDate: '2026-08-25',
-    feeAmount: 200,
-    feePaid: true,
-    notes: 'Signed and sealed with parish dry seal.',
-  },
-  {
-    id: 'cert-002',
-    referenceCode: 'CERT-449102',
-    documentType: 'Confirmation',
-    fullName: 'Clarissa Marie Villafuerte',
-    birthday: '2004-11-20',
-    fatherName: 'Antonio Villafuerte',
-    motherName: 'Grace Cruz',
-    sacramentDate: '2016-04-10',
-    purpose: 'School & Scholarship Requirement',
-    requestedBy: 'Grace Cruz (Mother)',
-    contactEmail: 'grace.villafuerte@yahoo.com',
-    contactPhone: '+63 920 441 9021',
-    status: 'Processing',
-    createdDate: '2026-08-29',
-    feeAmount: 200,
-    feePaid: true,
-    notes: 'Verifying Book of Confirmations Vol. 14.',
-  }
-];
+export const DEV_MOCK_CERTIFICATE_REQUESTS: CertificateRequest[] = [];
+

@@ -49,13 +49,15 @@ import {
   INITIAL_MASS_INTENTIONS, 
   INITIAL_SACRAMENTS 
 } from '../../data/adminData';
-import { AdminUser, UserRole } from '../../types';
+import { AdminUser, UserRole, FacilityInquiry, FacilityReservation } from '../../types';
 import { AdminNewsCms } from './AdminNewsCms';
 import { AdminUserSettings } from './AdminUserSettings';
 import { AdminFacilitiesManager } from './AdminFacilitiesManager';
+import { AdminFacilityBookingsManager } from './AdminFacilityBookingsManager';
 import { AdminEmailLogsViewer } from './AdminEmailLogsViewer';
 import { emailWorkflowService } from '../../services/emailService';
 import { authService } from '../../services/authService';
+import { facilityService } from '../../services/facilityService';
 import { LogOut } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -147,43 +149,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
     }
   }, [currentUser.role, adminPage]);
   
+  // Mock IDs filter helper to purge old sample/mock data
+  const isMockId = (id: string, ref?: string) => {
+    if (!id && !ref) return false;
+    const sId = String(id || '').toLowerCase();
+    const sRef = String(ref || '').toUpperCase();
+    return (
+      sId.startsWith('fb-') ||
+      sId.startsWith('cert-') ||
+      sId.startsWith('sac-') ||
+      sId.startsWith('mi-') ||
+      sId.startsWith('inq-') ||
+      sId.startsWith('res-') ||
+      sId.startsWith('mock-') ||
+      sRef.includes('CUB-FAC-') ||
+      sRef.includes('PC-') ||
+      sRef.includes('GROTTO-') ||
+      sRef.includes('NC-') ||
+      sRef.includes('INT-') ||
+      sRef.includes('SAC-') ||
+      sRef.includes('CERT-')
+    );
+  };
+
+  // Real facility inquiries and reservations from facilityService
+  const [inquiries, setInquiries] = useState<FacilityInquiry[]>([]);
+  const [reservations, setReservations] = useState<FacilityReservation[]>([]);
+
   // Data state with localStorage synchronization
-  const [facilityBookings, setFacilityBookings] = useState<FacilityBooking[]>(() => {
-    try {
-      const saved = localStorage.getItem('cathedral_facility_bookings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed.map(normalizeFacilityBooking);
-          const ids = new Set(normalized.map((p: any) => p.id));
-          return [...normalized, ...INITIAL_FACILITY_BOOKINGS.filter(b => !ids.has(b.id))];
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_FACILITY_BOOKINGS;
-  });
+  const [facilityBookings, setFacilityBookings] = useState<FacilityBooking[]>([]);
 
   const [certificateRequests, setCertificateRequests] = useState<CertificateRequest[]>(() => {
     try {
       const saved = localStorage.getItem('cathedral_certificate_requests');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed.map(normalizeCertificateRequest);
-          const ids = new Set(normalized.map((p: any) => p.id));
-          return [...normalized, ...INITIAL_CERTIFICATE_REQUESTS.filter(r => !ids.has(r.id))];
+        if (Array.isArray(parsed)) {
+          const nonMock = parsed
+            .filter((p: any) => !isMockId(p?.id, p?.referenceCode))
+            .map(normalizeCertificateRequest);
+          return nonMock;
         }
       }
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_CERTIFICATE_REQUESTS;
+    return [];
   });
 
-  const [massIntentions, setMassIntentions] = useState<MassIntention[]>(INITIAL_MASS_INTENTIONS);
-  const [sacraments, setSacraments] = useState<SacramentBooking[]>(INITIAL_SACRAMENTS);
+  const [massIntentions, setMassIntentions] = useState<MassIntention[]>([]);
+  const [sacraments, setSacraments] = useState<SacramentBooking[]>([]);
 
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -193,12 +208,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
 
   // Calendar View specific state
   const [calendarStatusFilter, setCalendarStatusFilter] = useState<'all' | 'Pending' | 'Confirmed' | 'Completed'>('all');
-  const [calendarCurrentDate, setCalendarCurrentDate] = useState<Date>(new Date(2025, 8, 1)); // Default to Sept 2025 where sample events live
-  const [calendarSelectedDate, setCalendarSelectedDate] = useState<string | null>('2025-09-20');
+  const [calendarCurrentDate, setCalendarCurrentDate] = useState<Date>(new Date());
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState<string | null>(new Date().toISOString().split('T')[0]);
 
   // Modals state
   const [isAddFacilityModalOpen, setIsAddFacilityModalOpen] = useState(false);
-  const [addFacilityInitialDate, setAddFacilityInitialDate] = useState<string>('2025-09-20');
+  const [addFacilityInitialDate, setAddFacilityInitialDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isAddCertificateModalOpen, setIsAddCertificateModalOpen] = useState(false);
   const [isAddSacramentModalOpen, setIsAddSacramentModalOpen] = useState(false);
   const [isAddIntentionModalOpen, setIsAddIntentionModalOpen] = useState(false);
@@ -208,27 +223,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
   const [selectedSacramentForView, setSelectedSacramentForView] = useState<SacramentBooking | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Fetch real inquiries & reservations from facilityService and sync calendar
+  const refreshFacilityData = async () => {
+    try {
+      const data = await facilityService.getInquiriesAndReservations();
+      const cleanInqs = (data.inquiries || []).filter((inq: any) => !isMockId(inq.id, inq.referenceCode));
+      const cleanRes = (data.reservations || []).filter((res: any) => !isMockId(res.id, res.referenceCode));
+      setInquiries(cleanInqs);
+      setReservations(cleanRes);
+
+      // Convert clean reservations into facilityBookings for calendar & compatibility
+      const mappedBookings: FacilityBooking[] = cleanRes.map((r) => ({
+        id: r.id,
+        referenceCode: r.referenceCode,
+        facilityId: (r.facilityId || 'parish-center-multipurpose') as any,
+        facilityName: r.facilityName,
+        eventName: r.purpose || 'Cathedral Facility Reservation',
+        clientName: r.name,
+        clientOrganization: 'Private Client',
+        clientEmail: r.email,
+        clientPhone: r.phone,
+        eventDate: r.reservationDate,
+        timeSlot: `${r.startTime} – ${r.endTime}`,
+        pax: 100,
+        totalAmount: r.amount || r.agreedAmount || 0,
+        depositAmount: r.depositDue || 0,
+        depositStatus: (r.paymentStatus === 'verified' || (r.paymentStatus as any) === 'paid') ? 'Paid' : 'Unpaid',
+        status: (r.status === 'confirmed' ? 'Confirmed' : r.status === 'completed' ? 'Completed' : 'Pending Review') as any,
+        addons: [],
+        livestreaming: false,
+        notes: r.adminNotes || '',
+        createdDate: (r.createdAt || '').split('T')[0] || new Date().toISOString().split('T')[0],
+      }));
+
+      setFacilityBookings(mappedBookings);
+    } catch (err) {
+      console.error('Error refreshing facility data:', err);
+    }
+  };
+
   // Listen for storage events (e.g. from Contact Page or Facility Reservation forms)
   useEffect(() => {
-    const handleStorageChange = () => {
-      try {
-        const savedBookings = localStorage.getItem('cathedral_facility_bookings');
-        if (savedBookings) {
-          const parsed = JSON.parse(savedBookings);
-          if (Array.isArray(parsed)) {
-            const normalized = parsed.map(normalizeFacilityBooking);
-            const ids = new Set(normalized.map((p: any) => p.id));
-            setFacilityBookings([...normalized, ...INITIAL_FACILITY_BOOKINGS.filter(b => !ids.has(b.id))]);
-          }
+    // Purge mock bookings and legacy items from storage
+    try {
+      localStorage.removeItem('cathedral_facility_bookings');
+      const inqRaw = localStorage.getItem('cathedral_facility_inquiries');
+      if (inqRaw) {
+        const inqs = JSON.parse(inqRaw);
+        if (Array.isArray(inqs)) {
+          const cleaned = inqs.filter((i: any) => !isMockId(i?.id, i?.referenceCode));
+          localStorage.setItem('cathedral_facility_inquiries', JSON.stringify(cleaned));
         }
+      }
+      const resRaw = localStorage.getItem('cathedral_facility_reservations');
+      if (resRaw) {
+        const ress = JSON.parse(resRaw);
+        if (Array.isArray(ress)) {
+          const cleaned = ress.filter((r: any) => !isMockId(r?.id, r?.referenceCode));
+          localStorage.setItem('cathedral_facility_reservations', JSON.stringify(cleaned));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
+    refreshFacilityData();
+    const unsub = facilityService.subscribeBookings(() => {
+      refreshFacilityData();
+    });
+
+    const handleStorageChange = () => {
+      refreshFacilityData();
+      try {
         const savedCerts = localStorage.getItem('cathedral_certificate_requests');
         if (savedCerts) {
           const parsed = JSON.parse(savedCerts);
           if (Array.isArray(parsed)) {
-            const normalized = parsed.map(normalizeCertificateRequest);
-            const ids = new Set(normalized.map((p: any) => p.id));
-            setCertificateRequests([...normalized, ...INITIAL_CERTIFICATE_REQUESTS.filter(r => !ids.has(r.id))]);
+            const nonMock = parsed
+              .filter((p: any) => !isMockId(p?.id, p?.referenceCode))
+              .map(normalizeCertificateRequest);
+            setCertificateRequests(nonMock);
           }
         }
       } catch (err) {
@@ -237,7 +311,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
     };
 
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      unsub();
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -441,7 +518,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
   };
 
   // Stats (Removed Facility Collections summary tab)
-  const totalActiveBookings = facilityBookings.filter(b => b.status === 'Confirmed').length;
+  const totalActiveBookings = reservations.filter(r => r.status === 'confirmed' || (r.status as any) === 'Confirmed').length;
   const pendingCertificatesCount = certificateRequests.filter(c => c.status === 'Pending' || c.status === 'Processing').length;
   const pendingSacramentReviews = sacraments.filter(s => s.status === 'Requirements Review' || s.status === 'Canonical Interview').length;
   const todayIntentionsCount = massIntentions.length;
@@ -586,7 +663,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
                   <Lock className="w-3 h-3 text-amber-300 ml-0.5" />
                 ) : (
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-blue-100 text-[#0171bb] font-bold">
-                    {facilityBookings.length + certificateRequests.length + sacraments.length + massIntentions.length}
+                    {reservations.length + inquiries.length + certificateRequests.length + sacraments.length + massIntentions.length}
                   </span>
                 )}
               </button>
@@ -750,7 +827,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
                   }`}
                 >
                   <Building2 className="w-4 h-4" />
-                  <span>Cathedral Facilities ({facilityBookings.length})</span>
+                  <span>Cathedral Facilities ({reservations.length + inquiries.length})</span>
                 </button>
 
                 {/* 2. Certificate Request */}
@@ -937,117 +1014,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
         {/* 1. FACILITIES MANAGEMENT TAB */}
         {activeTab === 'facilities' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h2 className="font-cathedral text-lg font-bold text-slate-900">
-                    Cathedral Venue & Function Space Reservations
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Manage Parish Center rooms, The Cathedral Grottos, Nativity Chapel, and banquet events.
-                  </p>
-                </div>
-                <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                  Showing {filteredFacilityBookings.length} of {facilityBookings.length}
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="p-3.5">Ref Code & Date</th>
-                      <th className="p-3.5">Venue / Space</th>
-                      <th className="p-3.5">Event & Client</th>
-                      <th className="p-3.5">Time & Pax</th>
-                      <th className="p-3.5">Rates / Status</th>
-                      <th className="p-3.5">Status</th>
-                      <th className="p-3.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredFacilityBookings.map((b) => (
-                      <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3.5">
-                          <div className="font-bold text-slate-900 font-mono text-[11px]">{b.referenceCode}</div>
-                          <div className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
-                            <Calendar className="w-3 h-3 text-[#0171bb]" />
-                            <span>{b.eventDate}</span>
-                          </div>
-                        </td>
-
-                        <td className="p-3.5">
-                          <span className="font-semibold text-slate-900 block">{b.facilityName}</span>
-                          <span className="text-[10px] text-slate-500">{b.timeSlot}</span>
-                          {b.livestreaming && (
-                            <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-semibold border border-amber-200">
-                              <Video className="w-3 h-3" /> Livestream Requested
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="p-3.5">
-                          <div className="font-bold text-slate-900">{b.eventName || b.purpose || 'Cathedral Event'}</div>
-                          <div className="text-slate-500 text-[11px]">{b.clientName} • {b.clientPhone}</div>
-                        </td>
-
-                        <td className="p-3.5">
-                          <div className="font-semibold text-slate-800">{b.pax || b.estimatedPax || 0} Guests</div>
-                          <div className="text-[10px] text-slate-400">{(b.addons || []).length} Add-ons</div>
-                        </td>
-
-                        <td className="p-3.5">
-                          <div className="font-bold text-slate-900">₱{(b.totalAmount || 0).toLocaleString()}</div>
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            b.depositStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {b.depositStatus || 'Unpaid'} (₱{(b.depositAmount || b.depositPaid || 0).toLocaleString()})
-                          </span>
-                        </td>
-
-                        <td className="p-3.5">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            b.status === 'Confirmed'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : b.status === 'Payment Requested'
-                              ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                              : b.status === 'Pending Review'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : b.status === 'Completed'
-                              ? 'bg-blue-100 text-blue-900 border border-blue-200'
-                              : 'bg-rose-100 text-rose-800 border border-rose-200'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              b.status === 'Confirmed' ? 'bg-emerald-600' :
-                              b.status === 'Payment Requested' ? 'bg-indigo-600 animate-pulse' :
-                              b.status === 'Pending Review' ? 'bg-amber-600' : 'bg-slate-400'
-                            }`} />
-                            {b.status}
-                          </span>
-                        </td>
-
-                        <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
-                          <button
-                            onClick={() => setSelectedBookingForView(b)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#0171bb]/10 hover:bg-[#0171bb]/20 text-[#0171bb] font-bold text-[11px] transition-colors border border-[#0171bb]/20 cursor-pointer"
-                          >
-                            See Request
-                          </button>
-                          {b.status === 'Confirmed' && (
-                            <button
-                              onClick={() => handleUpdateFacilityStatus(b.id, 'Completed')}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#0171bb] hover:bg-[#015f9e] text-white font-semibold text-[11px] transition-colors cursor-pointer"
-                            >
-                              Mark Done
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <AdminFacilityBookingsManager showToast={showToast} />
           </div>
         )}
 

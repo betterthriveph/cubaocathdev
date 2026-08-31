@@ -35,13 +35,12 @@ class ReservationService {
       const data = localStorage.getItem(BOOKINGS_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.error('Failed to load facility bookings:', e);
     }
-    this.saveBookings(INITIAL_FACILITY_BOOKINGS);
-    return INITIAL_FACILITY_BOOKINGS;
+    return [];
   }
 
   saveBookings(bookings: FacilityBooking[]): void {
@@ -86,13 +85,12 @@ class ReservationService {
       const data = localStorage.getItem(CERTIFICATES_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.error('Failed to load certificate requests:', e);
     }
-    this.saveCertificates(INITIAL_CERTIFICATE_REQUESTS);
-    return INITIAL_CERTIFICATE_REQUESTS;
+    return [];
   }
 
   saveCertificates(certificates: CertificateRequest[]): void {
@@ -124,13 +122,12 @@ class ReservationService {
       const data = localStorage.getItem(INTENTIONS_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.error('Failed to load mass intentions:', e);
     }
-    this.saveIntentions(INITIAL_MASS_INTENTIONS);
-    return INITIAL_MASS_INTENTIONS;
+    return [];
   }
 
   saveIntentions(intentions: MassIntention[]): void {
@@ -149,13 +146,12 @@ class ReservationService {
       const data = localStorage.getItem(SACRAMENTS_KEY);
       if (data) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
       console.error('Failed to load sacraments:', e);
     }
-    this.saveSacraments(INITIAL_SACRAMENTS);
-    return INITIAL_SACRAMENTS;
+    return [];
   }
 
   saveSacraments(sacraments: SacramentBooking[]): void {
