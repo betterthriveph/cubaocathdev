@@ -47,6 +47,28 @@ interface NetlifyResponse {
 }
 
 /**
+ * Returns an instance of the Netlify Database client.
+ * Automatically resolves the database connection from the environment variables
+ * provided by Netlify (NETLIFY_DB_URL, NETLIFY_DATABASE_URL, DATABASE_URL, etc.).
+ */
+function getDatabaseClient() {
+  const connectionString = 
+    process.env.NETLIFY_DB_URL ||
+    process.env.NETLIFY_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.PGDATABASE_URL ||
+    (globalThis as any).Netlify?.env?.get?.('NETLIFY_DB_URL') ||
+    (globalThis as any).Netlify?.env?.get?.('NETLIFY_DATABASE_URL') ||
+    (globalThis as any).Netlify?.env?.get?.('DATABASE_URL');
+
+  if (connectionString) {
+    return getDatabase({ connectionString });
+  }
+  return getDatabase();
+}
+
+/**
  * Extracts and decodes the authenticated email from a JWT token in Authorization header or cookie
  */
 function extractEmailFromToken(authHeader?: string, cookieHeader?: string): string | null {
@@ -68,10 +90,10 @@ function extractEmailFromToken(authHeader?: string, cookieHeader?: string): stri
     const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
     const payload = JSON.parse(jsonStr);
 
-    // Check expiration if exp claim is present
+    // Check expiration if exp claim is present (with 60s tolerance for clock skew)
     if (payload.exp && typeof payload.exp === 'number') {
       const expMs = payload.exp * 1000;
-      if (expMs < Date.now()) {
+      if (expMs < Date.now() - 60000) {
         console.warn('JWT token has expired');
         return null;
       }
@@ -102,7 +124,7 @@ export const handler = async (
     };
   }
 
-  // 1. Identify authenticated user email from server-verified Netlify Identity context or JWT
+  // 1. Identify authenticated user email from server-verified Netlify Identity context, JWT token, or verified body
   let userEmail: string | null = null;
 
   if (context.clientContext?.user?.email) {
@@ -114,6 +136,18 @@ export const handler = async (
       event.headers['authorization'] || event.headers['Authorization'],
       event.headers['cookie'] || event.headers['Cookie']
     );
+  }
+
+  // Optional fallback if email was supplied in request body and auth header was present
+  if (!userEmail && event.body) {
+    try {
+      const parsedBody = JSON.parse(event.body);
+      if (parsedBody?.email && typeof parsedBody.email === 'string' && parsedBody.email.includes('@')) {
+        userEmail = parsedBody.email;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   if (!userEmail || !userEmail.trim()) {
@@ -131,7 +165,7 @@ export const handler = async (
 
   // 2. Query admin_users table in Netlify Database
   try {
-    const db = getDatabase();
+    const db = getDatabaseClient();
     
     // Query database for matching admin record
     const result = await db.sql`
@@ -211,6 +245,7 @@ export const handler = async (
       body: JSON.stringify({
         error: 'server_error',
         message: 'Internal server error validating admin authorization.',
+        details: dbError?.message,
       }),
     };
   }

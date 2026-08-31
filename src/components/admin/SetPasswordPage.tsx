@@ -1,6 +1,15 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Immaculate Conception Cathedral of Cubao
+ * Staff Account Password Setup & Activation View
+ */
+
 import React, { useState } from 'react';
 import { 
   ShieldCheck, 
+  ShieldAlert,
   Lock, 
   Key, 
   ArrowRight, 
@@ -8,9 +17,11 @@ import {
   CheckCircle2, 
   Eye, 
   EyeOff,
-  Sparkles
+  Sparkles,
+  LogIn,
+  Home
 } from 'lucide-react';
-import { authService } from '../../services/authService';
+import { authService, InviteActivationResult } from '../../services/authService';
 import { AdminUser } from '../../types';
 
 interface SetPasswordPageProps {
@@ -24,7 +35,9 @@ export const SetPasswordPage: React.FC<SetPasswordPageProps> = ({ token, onSucce
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  
+  // State for activation outcome
+  const [activationResult, setActivationResult] = useState<InviteActivationResult | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,14 +61,22 @@ export const SetPasswordPage: React.FC<SetPasswordPageProps> = ({ token, onSucce
     setIsSubmitting(true);
 
     try {
+      // 1. Complete Netlify Identity password setup first, then obtain session and verify admin_users
       const result = await authService.acceptInvite(token, password);
-      if (result.success && result.user) {
-        setIsSuccess(true);
-        setTimeout(() => {
-          onSuccess(result.user!);
-        }, 1200);
-      } else {
+      
+      if (!result.identitySuccess) {
+        // Identity activation itself failed (e.g. invalid/expired invite token)
         setErrorMsg(result.error || 'Failed to activate account. The invitation link may be invalid or expired.');
+      } else {
+        // Identity activation succeeded!
+        setActivationResult(result);
+
+        if (result.isAuthorized && result.user) {
+          // Authorized admin user -> redirect to admin dashboard
+          setTimeout(() => {
+            onSuccess(result.user!);
+          }, 1200);
+        }
       }
     } catch {
       setErrorMsg('An unexpected error occurred while activating your account.');
@@ -96,10 +117,12 @@ export const SetPasswordPage: React.FC<SetPasswordPageProps> = ({ token, onSucce
             <span>Staff Account Activation</span>
           </div>
           <h1 className="font-cathedral text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            Set Your Password
+            {activationResult ? 'Account Activation' : 'Set Your Password'}
           </h1>
           <p className="text-xs text-slate-600 max-w-sm mx-auto">
-            Welcome to the Cubao Cathedral Administrative Portal. Create a secure password to complete your staff account setup.
+            {activationResult 
+              ? 'Immaculate Conception Cathedral of Cubao Staff Portal'
+              : 'Welcome to the Cubao Cathedral Administrative Portal. Create a secure password to complete your staff account setup.'}
           </p>
         </div>
 
@@ -109,17 +132,69 @@ export const SetPasswordPage: React.FC<SetPasswordPageProps> = ({ token, onSucce
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-white py-8 px-6 sm:px-10 rounded-3xl border border-slate-200 shadow-xl space-y-6">
           
-          {isSuccess ? (
+          {/* CASE 1: Identity Activated AND Authorized in admin_users */}
+          {activationResult?.isAuthorized && activationResult?.user && (
             <div className="py-6 text-center space-y-3">
               <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <h3 className="font-bold text-lg text-slate-900">Account Activated!</h3>
               <p className="text-xs text-slate-600">
-                Your password has been set successfully. Redirecting you to the Cathedral Admin Portal...
+                Your password has been set successfully and administrative access is verified. Redirecting you to the Cathedral Admin Portal...
               </p>
             </div>
-          ) : (
+          )}
+
+          {/* CASE 2: Identity Activated BUT NOT Authorized in admin_users (or inactive) */}
+          {activationResult && !activationResult.isAuthorized && (
+            <div className="py-4 space-y-5">
+              <div className="text-center space-y-3">
+                <div className="w-14 h-14 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <ShieldAlert className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase tracking-wider">
+                    Identity Setup Complete
+                  </span>
+                  <h3 className="font-bold text-base text-slate-900">
+                    {activationResult.statusReason === 'inactive'
+                      ? 'Admin Account Inactive'
+                      : 'Authorization Required'}
+                  </h3>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-xs text-amber-900 space-y-2">
+                <p className="font-semibold text-amber-950">
+                  {activationResult.error || 'Your account has been activated, but it is not authorized for admin access.'}
+                </p>
+                <p className="text-[11px] text-amber-800/90 leading-relaxed">
+                  Your Netlify Identity credentials have been securely established for <span className="font-bold text-amber-950">{activationResult.identityEmail || 'your email'}</span>. To access church bookings, announcements, and administrative records, this account must be assigned active permissions in the parish administration roster.
+                </p>
+              </div>
+
+              <div className="space-y-2.5 pt-2">
+                <a
+                  href="/admin/login"
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Go to Staff Sign In</span>
+                </a>
+
+                <a
+                  href="/"
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Home className="w-4 h-4" />
+                  <span>Return to Cathedral Homepage</span>
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* CASE 3: Initial Password Form (Identity Activation not yet executed) */}
+          {!activationResult && (
             <>
               {errorMsg && (
                 <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
@@ -202,17 +277,17 @@ export const SetPasswordPage: React.FC<SetPasswordPageProps> = ({ token, onSucce
                   )}
                 </button>
               </form>
+
+              <div className="text-center pt-2">
+                <a
+                  href="/"
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors"
+                >
+                  <span>Return to Cathedral Homepage</span>
+                </a>
+              </div>
             </>
           )}
-
-          <div className="text-center pt-2">
-            <a
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-semibold transition-colors"
-            >
-              <span>Return to Cathedral Homepage</span>
-            </a>
-          </div>
 
         </div>
       </div>

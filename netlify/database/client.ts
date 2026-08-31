@@ -14,9 +14,23 @@ import { getDatabase } from '@netlify/database';
 
 /**
  * Returns an instance of the Netlify Database client.
- * Lazy-loaded to prevent initialization crashes when running in client-only or static contexts.
+ * Automatically resolves the database connection from the environment variables
+ * provided by Netlify (NETLIFY_DB_URL, NETLIFY_DATABASE_URL, DATABASE_URL, etc.).
  */
 export function getDb() {
+  const connectionString = 
+    process.env.NETLIFY_DB_URL ||
+    process.env.NETLIFY_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.PGDATABASE_URL ||
+    (globalThis as any).Netlify?.env?.get?.('NETLIFY_DB_URL') ||
+    (globalThis as any).Netlify?.env?.get?.('NETLIFY_DATABASE_URL') ||
+    (globalThis as any).Netlify?.env?.get?.('DATABASE_URL');
+
+  if (connectionString) {
+    return getDatabase({ connectionString });
+  }
   return getDatabase();
 }
 

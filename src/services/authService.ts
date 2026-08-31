@@ -49,6 +49,15 @@ export interface AuthResult {
   error?: string;
 }
 
+export interface InviteActivationResult {
+  identitySuccess: boolean;
+  identityEmail?: string;
+  isAuthorized: boolean;
+  user?: AdminUser;
+  error?: string;
+  statusReason?: 'authorized' | 'unauthorized' | 'inactive' | 'db_unavailable' | 'identity_failed';
+}
+
 class AuthService {
   private initialCallbackResult: AuthCallbackInfo | null = null;
   private initialized = false;
@@ -85,7 +94,7 @@ class AuthService {
   /**
    * Calls the serverless Netlify function to authorize the verified user against `admin_users` table
    */
-  public async fetchAdminAuthorization(token?: string): Promise<{ success: boolean; user?: AdminUser; error?: string; status?: number }> {
+  public async fetchAdminAuthorization(token?: string, emailHint?: string): Promise<{ success: boolean; user?: AdminUser; error?: string; status?: number }> {
     try {
       const jwt = token || (await this.getJwtToken());
       const headers: Record<string, string> = {
@@ -98,8 +107,9 @@ class AuthService {
 
       // Query server-side function
       const response = await fetch('/.netlify/functions/get-admin-user', {
-        method: 'GET',
+        method: 'POST',
         headers,
+        body: JSON.stringify({ email: emailHint }),
       });
 
       const data = await response.json();
@@ -108,6 +118,7 @@ class AuthService {
         return {
           success: true,
           user: data.user as AdminUser,
+          status: 200,
         };
       }
 
@@ -134,6 +145,14 @@ class AuthService {
         };
       }
 
+      if (response.status === 503) {
+        return {
+          success: false,
+          error: data.message || 'Netlify Database is not connected. Please ensure Netlify Database is provisioned.',
+          status: 503,
+        };
+      }
+
       return {
         success: false,
         error: data.message || 'Failed to verify admin authorization.',
@@ -144,6 +163,7 @@ class AuthService {
       return {
         success: false,
         error: 'Unable to connect to authorization server. Please try again.',
+        status: 500,
       };
     }
   }
@@ -326,7 +346,7 @@ class AuthService {
       if (isAuth) {
         const netlifyUser = await getNetlifyUser();
         if (netlifyUser) {
-          const authRes = await this.fetchAdminAuthorization();
+          const authRes = await this.fetchAdminAuthorization(undefined, netlifyUser.email);
           if (authRes.success && authRes.user) {
             this.setSession(authRes.user, true);
             return authRes.user;
@@ -346,10 +366,11 @@ class AuthService {
   }
 
   /**
-   * Completes account activation by setting a password using an invite token.
-   * Then authorizes against admin_users database.
+   * Completes account activation by setting a password using an invite token with Netlify Identity.
+   * Netlify Identity password setup completes first.
+   * If Identity setup succeeds, obtains the authenticated session and verifies authorization against admin_users.
    */
-  async acceptInvite(token: string, password: string): Promise<AuthResult> {
+  async acceptInvite(token: string, password: string): Promise<InviteActivationResult> {
     this.inviteHandled = true;
     this.initialCallbackResult = null;
 
@@ -358,25 +379,19 @@ class AuthService {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
 
+    let netlifyUser: NetlifyUser | null = null;
+
+    // 1. Netlify Identity password setup MUST complete first
     try {
-      const user = await netlifyAcceptInvite(token, password);
-      if (!user) {
-        return { success: false, error: 'Failed to activate account with Netlify Identity.' };
+      netlifyUser = await netlifyAcceptInvite(token, password);
+      if (!netlifyUser) {
+        return {
+          identitySuccess: false,
+          isAuthorized: false,
+          error: 'Failed to activate account with Netlify Identity. The invitation link may be invalid or expired.',
+          statusReason: 'identity_failed',
+        };
       }
-
-      // Query database for admin_users authorization
-      const authRes = await this.fetchAdminAuthorization();
-      if (authRes.success && authRes.user) {
-        this.setSession(authRes.user, true);
-        return { success: true, user: authRes.user };
-      }
-
-      // If user is authenticated in Netlify Identity but not authorized in admin_users
-      await this.logout();
-      return {
-        success: false,
-        error: authRes.error || 'Your account is not authorized for admin access.',
-      };
     } catch (err: unknown) {
       console.error('Netlify Identity acceptInvite failed:', err);
       let errorMsg = 'Failed to activate account. The invitation link may be invalid or expired.';
@@ -385,7 +400,76 @@ class AuthService {
       } else if (err instanceof Error) {
         errorMsg = err.message;
       }
-      return { success: false, error: errorMsg };
+      return {
+        identitySuccess: false,
+        isAuthorized: false,
+        error: errorMsg,
+        statusReason: 'identity_failed',
+      };
+    }
+
+    // 2. Identity password setup succeeded! Now obtain authenticated session & check admin authorization
+    const identityEmail = netlifyUser.email || '';
+
+    try {
+      const authRes = await this.fetchAdminAuthorization(undefined, identityEmail);
+
+      if (authRes.success && authRes.user) {
+        this.setSession(authRes.user, true);
+        return {
+          identitySuccess: true,
+          identityEmail,
+          isAuthorized: true,
+          user: authRes.user,
+          statusReason: 'authorized',
+        };
+      }
+
+      if (authRes.status === 403) {
+        if (authRes.error === 'Your admin account is inactive.') {
+          return {
+            identitySuccess: true,
+            identityEmail,
+            isAuthorized: false,
+            error: 'Your account has been activated, but your admin account is inactive.',
+            statusReason: 'inactive',
+          };
+        }
+        return {
+          identitySuccess: true,
+          identityEmail,
+          isAuthorized: false,
+          error: 'Your account has been activated, but it is not authorized for admin access.',
+          statusReason: 'unauthorized',
+        };
+      }
+
+      if (authRes.status === 503) {
+        return {
+          identitySuccess: true,
+          identityEmail,
+          isAuthorized: false,
+          error: 'Your account has been activated, but the admin authorization service is currently unavailable.',
+          statusReason: 'db_unavailable',
+        };
+      }
+
+      return {
+        identitySuccess: true,
+        identityEmail,
+        isAuthorized: false,
+        error: authRes.error || 'Your account has been activated, but it is not authorized for admin access.',
+        statusReason: 'unauthorized',
+      };
+    } catch (err: unknown) {
+      console.error('Admin authorization check error during activation:', err);
+      return {
+        identitySuccess: true,
+        identityEmail,
+        isAuthorized: false,
+        error: 'Your account has been activated, but it is not authorized for admin access.',
+        statusReason: 'unauthorized',
+      };
     }
   }
 
@@ -412,7 +496,7 @@ class AuthService {
       }
 
       // 2. Query admin_users table in Netlify Database via secure Netlify Function
-      const authRes = await this.fetchAdminAuthorization();
+      const authRes = await this.fetchAdminAuthorization(undefined, cleanEmail);
 
       if (authRes.success && authRes.user) {
         this.setSession(authRes.user, rememberMe);
@@ -468,7 +552,7 @@ class AuthService {
         return { success: false, error: 'Failed to reset password.' };
       }
 
-      const authRes = await this.fetchAdminAuthorization();
+      const authRes = await this.fetchAdminAuthorization(undefined, user.email);
       if (authRes.success && authRes.user) {
         this.setSession(authRes.user, true);
         return { success: true, user: authRes.user };
