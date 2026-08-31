@@ -35,25 +35,71 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
 
   try {
     const payload = JSON.parse(event.body || '{}');
-    const {
-      facilityId,
-      facilitySlug,
-      name,
-      email,
-      phone,
-      requestedDate,
-      startTime,
-      endTime,
-      purpose,
-      message,
-    } = payload;
+    
+    // Support standard frontend variations of property names
+    const facilityIdentifier = 
+      payload.facilityId || 
+      payload.facility_id || 
+      payload.facility || 
+      payload.facilitySlug || 
+      payload.facility_slug;
 
-    if (!name || !email || !requestedDate || (!facilityId && !facilitySlug)) {
+    const name = 
+      payload.name || 
+      payload.applicantName || 
+      payload.applicant_name || 
+      payload.clientName || 
+      payload.contactPerson;
+
+    const email = 
+      payload.email || 
+      payload.clientEmail || 
+      payload.contactEmail;
+
+    const phone = 
+      payload.phone || 
+      payload.phoneNumber || 
+      payload.phone_number || 
+      payload.clientPhone || 
+      payload.contactPhone;
+
+    const requestedDate = 
+      payload.requestedDate || 
+      payload.requested_date || 
+      payload.date || 
+      payload.eventDate || 
+      payload.targetDate;
+
+    const startTime = 
+      payload.startTime || 
+      payload.start_time || 
+      payload.targetTime;
+
+    const endTime = 
+      payload.endTime || 
+      payload.end_time;
+
+    const purpose = 
+      payload.purpose || 
+      payload.eventType || 
+      payload.event_type || 
+      payload.eventName;
+
+    const message = 
+      payload.message || 
+      payload.notes || 
+      payload.specialNotes || 
+      payload.special_notes;
+
+    console.log(`[submit-facility-inquiry] Received inquiry for facility: ${facilityIdentifier || 'unspecified'}, applicant: ${name || 'unspecified'} (${email || 'no-email'})`);
+
+    if (!name || !email || !requestedDate || !facilityIdentifier) {
+      console.warn(`[submit-facility-inquiry] Validation failure - missing required fields: name=${Boolean(name)}, email=${Boolean(email)}, requestedDate=${Boolean(requestedDate)}, facility=${Boolean(facilityIdentifier)}`);
       return {
         statusCode: 400,
         headers: jsonHeaders,
         body: JSON.stringify({
-          error: 'Missing required fields: facility, name, email, and requestedDate are required.',
+          error: 'Missing required fields: facility, applicant name, email, and requested date are required.',
         }),
       };
     }
@@ -61,7 +107,6 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
     const db = getDatabaseClient();
 
     // 1. Resolve facility
-    const facilityIdentifier = facilitySlug || facilityId;
     const facRes = await db.sql`
       SELECT id, name, slug, base_price, deposit_amount
       FROM facilities
@@ -140,9 +185,12 @@ Notes / Message: ${cleanMessage || 'None'}
 
 Review and manage this inquiry in the Cathedral Admin Dashboard.`
       );
-    } catch (emailErr) {
-      console.warn('Could not dispatch admin inquiry notification:', emailErr);
+      console.log(`[submit-facility-inquiry] Admin notification email dispatched for ${referenceCode}`);
+    } catch (emailErr: any) {
+      console.warn('[submit-facility-inquiry] Could not dispatch admin inquiry notification:', emailErr?.message || emailErr);
     }
+
+    console.log(`[submit-facility-inquiry] Success: Created inquiry ${referenceCode} in database.`);
 
     return {
       statusCode: 201,
@@ -167,7 +215,7 @@ Review and manage this inquiry in the Cathedral Admin Dashboard.`
       }),
     };
   } catch (err: any) {
-    console.error('Error submitting facility inquiry:', err);
+    console.error('[submit-facility-inquiry] Database failure submitting inquiry:', err?.message || err);
     return {
       statusCode: 500,
       headers: jsonHeaders,

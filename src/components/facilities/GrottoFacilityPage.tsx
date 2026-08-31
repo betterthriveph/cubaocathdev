@@ -16,9 +16,11 @@ import {
   Send,
   Video,
   Maximize2,
-  X
+  X,
+  AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { facilityService } from '../../services/facilityService';
 
 interface GrottoFacilityPageProps {
   setCurrentPage: (page: PageId) => void;
@@ -31,6 +33,8 @@ export const GrottoFacilityPage: React.FC<GrottoFacilityPageProps> = ({
   const [selectedGalleryImg, setSelectedGalleryImg] = useState<string | null>(null);
   const [bookingSubmitted, setBookingSubmitted] = useState(false);
   const [referenceCode, setReferenceCode] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   // Form State
   const [selectedChapel, setSelectedChapel] = useState<'Chapel of the Ascension' | 'Chapel of the Assumption'>('Chapel of the Ascension');
@@ -114,62 +118,49 @@ export const GrottoFacilityPage: React.FC<GrottoFacilityPageProps> = ({
     },
   ];
 
-  const handleBookingSubmit = (e: React.FormEvent) => {
+  const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contactPerson || !contactEmail || !contactPhone || !targetDate) return;
+    if (!contactPerson || !contactEmail || !contactPhone || !targetDate) {
+      setBookingError('Please fill out all required fields (Contact Person, Email, Phone, and Target Date).');
+      return;
+    }
 
-    const ref = 'GROTTO-' + Math.floor(100000 + Math.random() * 900000);
-    setReferenceCode(ref);
+    setIsSubmitting(true);
+    setBookingError(null);
 
     const chapelObj = chapels.find(c => c.id === selectedChapel);
     const fee = (chapelObj ? chapelObj.rateValue : 12000) + (isLivestreaming ? 2500 : 0);
 
-    // Save to localStorage for Admin Dashboard
-    try {
-      const existing = JSON.parse(localStorage.getItem('cathedral_facility_bookings') || '[]');
-      const newBooking: any = {
-        id: 'fb-' + Date.now(),
-        referenceCode: ref,
-        facilityId: selectedChapel,
-        facilityName: `The Cathedral Grottos – ${chapelObj ? chapelObj.name : selectedChapel}`,
-        facilityType: 'Grotto',
-        eventName: `Devotional Liturgy & Gathering (${chapelObj ? chapelObj.name : selectedChapel})`,
-        clientName: contactPerson,
-        clientOrganization: groupName || 'Devotee Group',
-        clientEmail: contactEmail,
-        clientPhone: contactPhone,
-        eventDate: targetDate,
-        timeSlot: targetTime,
-        status: 'Pending Review',
-        pax: parseInt(estimatedPax) || 50,
-        estimatedPax: parseInt(estimatedPax) || 50,
-        purpose: `Chapel Reservation (${chapelObj ? chapelObj.name : selectedChapel})${isLivestreaming ? ' + Livestreaming' : ''}${specialNotes ? ` - Notes: ${specialNotes}` : ''}`,
-        totalAmount: fee,
-        depositAmount: Math.round(fee * 0.3),
-        depositStatus: 'Unpaid',
-        depositPaid: 0,
-        addons: isLivestreaming ? ['Parish Media Livestreaming Coverage'] : ['Standard Chapel Access'],
-        livestreaming: isLivestreaming,
-        notes: specialNotes || 'Submitted via Cathedral Grottos Online Reservation Form',
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      localStorage.setItem('cathedral_facility_bookings', JSON.stringify([newBooking, ...existing]));
-      window.dispatchEvent(new Event('storage'));
-    } catch (err) {
-      console.error('Storage error', err);
-    }
+    const res = await facilityService.submitInquiry({
+      facilityId: selectedChapel === 'Chapel of the Ascension' ? 'grotto-ascension' : 'grotto-assumption',
+      facilitySlug: 'cathedral-grottos',
+      name: contactPerson,
+      email: contactEmail,
+      phone: contactPhone,
+      requestedDate: targetDate,
+      startTime: targetTime,
+      endTime: '1 Day Liturgical Access',
+      purpose: `Devotional Liturgy & Gathering (${selectedChapel})${groupName ? ` - Group: ${groupName}` : ''}${isLivestreaming ? ' + Livestreaming' : ''}`,
+      message: `Chapel: ${selectedChapel} | Time Slot: ${targetTime} | Pax: ${estimatedPax} | Total Estimated: ₱${fee.toLocaleString()} | Livestreaming: ${isLivestreaming ? 'Yes' : 'No'}${specialNotes ? ` | Notes: ${specialNotes}` : ''}`,
+    });
 
-    try {
-      confetti({
-        particleCount: 70,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // safe fallback
-    }
+    setIsSubmitting(false);
 
-    setBookingSubmitted(true);
+    if (res.success && res.referenceCode) {
+      setReferenceCode(res.referenceCode);
+      try {
+        confetti({
+          particleCount: 70,
+          spread: 60,
+          origin: { y: 0.6 },
+        });
+      } catch {
+        // safe fallback
+      }
+      setBookingSubmitted(true);
+    } else {
+      setBookingError(res.error || res.message || 'Failed to submit grotto reservation request. Please check your connection and try again.');
+    }
   };
 
   const handleReset = () => {
@@ -649,14 +640,22 @@ export const GrottoFacilityPage: React.FC<GrottoFacilityPageProps> = ({
                     />
                   </div>
 
+                  {bookingError && (
+                    <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>{bookingError}</span>
+                    </div>
+                  )}
+
                   <div className="pt-2">
                     <button
                       type="submit"
                       id="submit-grotto-booking-btn"
-                      className="w-full py-3.5 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2"
+                      disabled={isSubmitting}
+                      className="w-full py-3.5 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       <Send className="w-4 h-4 text-amber-300" />
-                      <span>Submit Grotto Chapel Reservation</span>
+                      <span>{isSubmitting ? 'Submitting Reservation...' : 'Submit Grotto Chapel Reservation'}</span>
                     </button>
                     <p className="text-[11px] text-slate-500 text-center mt-2">
                       Requests are sent directly to the Cathedral Admin Dashboard for verification.

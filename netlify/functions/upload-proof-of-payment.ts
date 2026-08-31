@@ -53,7 +53,10 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
       mimeType,
     } = payload;
 
+    console.log(`[upload-proof-of-payment] Received proof upload for referenceCode: ${referenceCode}`);
+
     if (!referenceCode || (!fileBase64 && !paymentReference)) {
+      console.warn('[upload-proof-of-payment] Validation failure: referenceCode and payment proof/reference details are required.');
       return {
         statusCode: 400,
         headers: jsonHeaders,

@@ -63,7 +63,10 @@ export const handler = async (
       siteOrigin, // e.g. https://cubaocathedral.com or current origin
     } = payload;
 
+    console.log(`[send-payment-instructions] Dispatching payment instructions for reservation: ${reservationId} by admin: ${auth.user.email}`);
+
     if (!reservationId) {
+      console.warn('[send-payment-instructions] Validation failure: reservationId is required');
       return {
         statusCode: 400,
         headers: jsonHeaders,

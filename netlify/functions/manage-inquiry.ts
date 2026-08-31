@@ -47,15 +47,18 @@ export const handler = async (
   }
 
   try {
-    const payload仰 = JSON.parse(event.body || '{}');
+    const payload = JSON.parse(event.body || '{}');
     const {
       inquiryId,
       status, // 'new' | 'under_review' | 'approved' | 'declined' | 'cancelled'
       adminNotes,
       quotedPrice,
-    } = payload仰;
+    } = payload;
+
+    console.log(`[manage-inquiry] Request by ${auth.user.email} on inquiry: ${inquiryId}, target status: ${status || 'unchanged'}`);
 
     if (!inquiryId) {
+      console.warn('[manage-inquiry] Validation failure: inquiryId is required');
       return {
         statusCode: 400,
         headers: jsonHeaders,

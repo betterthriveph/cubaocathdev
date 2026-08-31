@@ -136,13 +136,13 @@ export const FacilityInquiryModal: React.FC<FacilityInquiryModalProps> = ({
 
     setSubmitting(false);
 
-    if (res.success) {
+    if (res.success && res.referenceCode) {
       setSubmissionSuccess({
         referenceCode: res.referenceCode,
         message: res.message || 'Inquiry successfully submitted to Cathedral Secretariat.',
       });
     } else {
-      setSubmitError('Failed to submit inquiry. Please try again.');
+      setSubmitError(res.error || res.message || 'Failed to submit inquiry. Please try again.');
     }
   };
 

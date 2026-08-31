@@ -56,7 +56,10 @@ export const handler = async (
       facilityInstructions,
     } = payload;
 
+    console.log(`[verify-payment] Payment action '${action}' for reservation: ${reservationId} by admin: ${auth.user.email}`);
+
     if (!reservationId || !action) {
+      console.warn('[verify-payment] Validation failure: reservationId and action are required.');
       return {
         statusCode: 400,
         headers: jsonHeaders,

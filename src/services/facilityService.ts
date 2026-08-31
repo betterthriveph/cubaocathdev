@@ -142,7 +142,11 @@ class FacilityService {
 
       const resData = await res.json();
 
-      // Update local state and storage
+      if (!res.ok) {
+        return { success: false, message: resData?.error || resData?.message || 'Failed to update facility pricing.' };
+      }
+
+      // Update local cache and storage
       const facilities = this.getStorage();
       const idx = facilities.findIndex(f => f.id === facilityId || f.slug === facilityId);
       if (idx !== -1) {
@@ -157,23 +161,10 @@ class FacilityService {
         this.saveStorage(facilities);
       }
 
-      if (!res.ok) {
-        return { success: true, message: resData?.message || 'Updated in local storage.' };
-      }
       return { success: true, message: resData?.message || 'Master pricing saved successfully.' };
     } catch (err: any) {
-      console.warn('Network error updating pricing on database, saved locally:', err);
-      // Fallback local update
-      const facilities = this.getStorage();
-      const idx = facilities.findIndex(f => f.id === facilityId || f.slug === facilityId);
-      if (idx !== -1) {
-        facilities[idx] = {
-          ...facilities[idx],
-          ...pricing,
-        };
-        this.saveStorage(facilities);
-      }
-      return { success: true, message: 'Pricing updated (Offline/Preview Mode).' };
+      console.error('Error updating pricing on database:', err);
+      return { success: false, message: err?.message || 'Network error updating pricing.' };
     }
   }
 
@@ -187,14 +178,15 @@ class FacilityService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           facility: params.facilityIdOrSlug,
+          facilityId: params.facilityIdOrSlug,
           date: params.date,
           startTime: params.startTime,
           endTime: params.endTime,
         }),
       });
 
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         return {
           available: Boolean(data.available),
           message: data.message,
@@ -202,10 +194,14 @@ class FacilityService {
           holdExpiresAt: data.holdExpiresAt,
         };
       }
-    } catch (err) {
-      console.warn('Availability check offline fallback:', err);
+      return {
+        available: false,
+        message: data.error || 'Unable to check availability at this time.',
+      };
+    } catch (err: any) {
+      console.warn('Availability check error:', err);
+      return { available: true, message: 'Check slot availability with Secretariat.' };
     }
-    return { available: true, message: 'Date is available for inquiry.' };
   }
 
   /**
@@ -222,59 +218,53 @@ class FacilityService {
     endTime: string;
     purpose: string;
     message?: string;
-  }): Promise<{ success: boolean; referenceCode: string; message?: string }> {
+  }): Promise<{ success: boolean; referenceCode?: string; message?: string; error?: string }> {
     try {
       const res = await fetch('/.netlify/functions/submit-facility-inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          facility_id: data.facilityId,
+          facility: data.facilitySlug || data.facilityId,
+          facilityId: data.facilityId,
+          facilitySlug: data.facilitySlug,
+          name: data.name,
+          applicantName: data.name,
+          email: data.email,
+          phone: data.phone,
+          requestedDate: data.requestedDate,
+          requested_date: data.requestedDate,
+          startTime: data.startTime,
+          start_time: data.startTime,
+          endTime: data.endTime,
+          end_time: data.endTime,
+          purpose: data.purpose,
+          message: data.message,
+          notes: data.message,
+        }),
       });
 
       const resData = await res.json();
       if (res.ok && resData.referenceCode) {
+        window.dispatchEvent(new CustomEvent(BOOKINGS_CHANGE_EVENT));
         return {
           success: true,
           referenceCode: resData.referenceCode,
           message: resData.message || 'Inquiry received by Cathedral Secretariat.',
         };
       }
-    } catch (err) {
-      console.warn('Error submitting inquiry to serverless function, recording locally:', err);
+
+      return {
+        success: false,
+        error: resData?.error || resData?.message || `Server error (${res.status}) submitting inquiry.`,
+      };
+    } catch (err: any) {
+      console.error('Error submitting inquiry to serverless function:', err);
+      return {
+        success: false,
+        error: err?.message || 'Network failure while transmitting inquiry. Please check your internet connection.',
+      };
     }
-
-    // Local fallback
-    const year = new Date().getFullYear();
-    const fallbackRef = `INQ-${year}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const newInquiry: FacilityInquiry = {
-      id: fallbackRef,
-      referenceCode: fallbackRef,
-      facilityId: data.facilityId,
-      name: data.name,
-      email: data.email,
-      phone: data.phone,
-      requestedDate: data.requestedDate,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      purpose: data.purpose,
-      message: data.message,
-      status: 'new',
-      quotedPrice: this.getFacilityById(data.facilityId)?.basePrice || 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    try {
-      const saved = JSON.parse(localStorage.getItem(INQUIRIES_STORAGE_KEY) || '[]');
-      localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify([newInquiry, ...saved]));
-      window.dispatchEvent(new CustomEvent(BOOKINGS_CHANGE_EVENT));
-    } catch (e) {
-      console.error(e);
-    }
-
-    return {
-      success: true,
-      referenceCode: fallbackRef,
-      message: 'Inquiry received. A cathedral administrator will review your application.',
-    };
   }
 
   /**

@@ -14,9 +14,11 @@ import {
   Zap, 
   X,
   Maximize2,
-  Tag
+  Tag,
+  AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { facilityService } from '../../services/facilityService';
 
 interface ParishCenterFacilityPageProps {
   setCurrentPage: (page: PageId) => void;
@@ -40,6 +42,8 @@ export const ParishCenterFacilityPage: React.FC<ParishCenterFacilityPageProps> =
   const [specialNotes, setSpecialNotes] = useState('');
   const [isBooked, setIsBooked] = useState(false);
   const [referenceCode, setReferenceCode] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   const rooms = [
     {
@@ -113,61 +117,49 @@ export const ParishCenterFacilityPage: React.FC<ParishCenterFacilityPageProps> =
     return hourlyRate * durationHours;
   };
 
-  const handleBookingSubmit = (e: React.FormEvent) => {
+  const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName || !clientEmail || !clientPhone || !eventDate) return;
-
-    const ref = 'PC-' + Math.floor(100000 + Math.random() * 900000);
-    setReferenceCode(ref);
-
-    const total = calculateTotal();
-
-    // Save to localStorage for Admin Dashboard
-    try {
-      const existing = JSON.parse(localStorage.getItem('cathedral_facility_bookings') || '[]');
-      const newBooking: any = {
-        id: 'fb-' + Date.now(),
-        referenceCode: ref,
-        facilityId: selectedRoom === 'small' ? 'parish-center-small' : selectedRoom === 'big' ? 'parish-center-big' : 'parish-center-multipurpose',
-        facilityName: `Parish Center – ${activeRoomObj.name}`,
-        facilityType: 'Parish Center',
-        eventName: `${eventType} (${activeRoomObj.name})`,
-        clientName,
-        clientOrganization: clientOrg || (rateTier === 'church' ? 'Church Ministry' : 'Private Client'),
-        clientEmail,
-        clientPhone,
-        eventDate,
-        timeSlot: `${durationHours} Hours (${rateTier === 'church' ? 'Church-Connected' : 'Non-Church'})`,
-        status: 'Pending Review',
-        pax: parseInt(activeRoomObj.capacity.replace(/\D/g, '')) || 50,
-        estimatedPax: parseInt(activeRoomObj.capacity.replace(/\D/g, '')) || 50,
-        purpose: `${eventType} (${activeRoomObj.name})${specialNotes ? ` - Notes: ${specialNotes}` : ''}`,
-        totalAmount: total,
-        depositAmount: Math.round(total * 0.3),
-        depositStatus: 'Unpaid',
-        depositPaid: 0,
-        addons: ['Standard Air Conditioning', 'Basic Sound System Setup'],
-        livestreaming: false,
-        notes: specialNotes || 'Submitted via Parish Center Online Reservation Form',
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      localStorage.setItem('cathedral_facility_bookings', JSON.stringify([newBooking, ...existing]));
-      window.dispatchEvent(new Event('storage'));
-    } catch (err) {
-      console.error('Storage error', err);
+    if (!clientName || !clientEmail || !clientPhone || !eventDate) {
+      setBookingError('Please fill out all required fields (Name, Email, Phone, and Event Date).');
+      return;
     }
 
-    try {
-      confetti({
-        particleCount: 75,
-        spread: 65,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // safe fallback
-    }
+    setIsSubmitting(true);
+    setBookingError(null);
 
-    setIsBooked(true);
+    const calculatedTotal = calculateTotal();
+    const facilityId = selectedRoom === 'small' ? 'parish-center-small' : selectedRoom === 'big' ? 'parish-center-big' : 'parish-center-multipurpose';
+
+    const res = await facilityService.submitInquiry({
+      facilityId,
+      facilitySlug: 'parish-center',
+      name: clientName,
+      email: clientEmail,
+      phone: clientPhone,
+      requestedDate: eventDate,
+      startTime: rateTier === 'church' ? '08:00 AM' : '09:00 AM',
+      endTime: `${durationHours} Hours Session`,
+      purpose: `${eventType} (${activeRoomObj.name})${clientOrg ? ` - Org: ${clientOrg}` : ''}${specialNotes ? ` - Notes: ${specialNotes}` : ''}`,
+      message: `Duration: ${durationHours} hrs | Classification: ${rateTier === 'church' ? 'Church Rate' : 'Non-Church Rate'} | Estimated Total: ₱${calculatedTotal.toLocaleString()}${specialNotes ? ` | Notes: ${specialNotes}` : ''}`,
+    });
+
+    setIsSubmitting(false);
+
+    if (res.success && res.referenceCode) {
+      setReferenceCode(res.referenceCode);
+      try {
+        confetti({
+          particleCount: 75,
+          spread: 65,
+          origin: { y: 0.6 },
+        });
+      } catch {
+        // safe fallback
+      }
+      setIsBooked(true);
+    } else {
+      setBookingError(res.error || res.message || 'Failed to submit reservation inquiry. Please check your network and try again.');
+    }
   };
 
   return (
@@ -596,6 +588,13 @@ export const ParishCenterFacilityPage: React.FC<ParishCenterFacilityPageProps> =
                 />
               </div>
 
+              {bookingError && (
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{bookingError}</span>
+                </div>
+              )}
+
               {/* Estimate Summary & Submit */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-xs">
@@ -610,10 +609,11 @@ export const ParishCenterFacilityPage: React.FC<ParishCenterFacilityPageProps> =
 
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Send className="w-4 h-4 text-amber-300" />
-                  <span>Submit Reservation Request</span>
+                  <span>{isSubmitting ? 'Transmitting Request...' : 'Submit Reservation Request'}</span>
                 </button>
               </div>
 
