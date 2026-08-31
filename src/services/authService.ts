@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * Immaculate Conception Cathedral of Cubao
- * Admin Authentication & Netlify Identity Service
+ * Real Netlify Identity Authentication & Database Authorization Service
  * 
- * Integrates @netlify/identity for production authentication, account invitations,
- * password creation, password recovery, and secure sessions.
+ * Flow:
+ * 1. Netlify Identity handles authentication (email/password, invitations, password reset).
+ * 2. `admin_users` table in Netlify Database handles authorization via serverless function.
+ * 3. Access to /admin requires both valid Netlify Identity session AND active record in admin_users.
  */
 
 import { 
@@ -19,12 +21,11 @@ import {
   recoverPassword as netlifyRecoverPassword, 
   requestPasswordRecovery as netlifyRequestPasswordRecovery, 
   updateUser as netlifyUpdateUser,
+  refreshSession as netlifyRefreshSession,
   AuthError,
-  MissingIdentityError,
   User as NetlifyUser
 } from '@netlify/identity';
 import { AdminUser, UserRole } from '../types';
-import { DEV_MOCK_ADMIN_USERS } from '../data/mockData';
 
 const AUTH_STORAGE_KEY = 'cathedral_admin_session';
 
@@ -32,7 +33,7 @@ export interface AuthSession {
   user: AdminUser;
   token: string;
   expiresAt: number;
-  provider: 'netlify-identity' | 'mock-dev';
+  provider: 'netlify-identity';
 }
 
 export interface AuthCallbackInfo {
@@ -42,22 +43,123 @@ export interface AuthCallbackInfo {
   error?: string;
 }
 
+export interface AuthResult {
+  success: boolean;
+  user?: AdminUser;
+  error?: string;
+}
+
 class AuthService {
   private initialCallbackResult: AuthCallbackInfo | null = null;
   private initialized = false;
+  private inviteHandled = false;
 
   /**
-   * Translates a Netlify Identity User object into the application's AdminUser model
+   * Helper to retrieve Netlify Identity JWT access token from current session
    */
-  public mapNetlifyUserToAdminUser(user: NetlifyUser): AdminUser {
+  public async getJwtToken(): Promise<string | null> {
+    try {
+      const refreshed = await netlifyRefreshSession();
+      if (refreshed) return refreshed;
+    } catch {
+      // ignore
+    }
+
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = localStorage.getItem('gotrue.user') || sessionStorage.getItem('gotrue.user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.token?.access_token) {
+            return parsed.token.access_token;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  }
+
+  /**
+   * Calls the serverless Netlify function to authorize the verified user against `admin_users` table
+   */
+  public async fetchAdminAuthorization(token?: string): Promise<{ success: boolean; user?: AdminUser; error?: string; status?: number }> {
+    try {
+      const jwt = token || (await this.getJwtToken());
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (jwt) {
+        headers['Authorization'] = `Bearer ${jwt}`;
+      }
+
+      // Query server-side function
+      const response = await fetch('/.netlify/functions/get-admin-user', {
+        method: 'GET',
+        headers,
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success && data.user) {
+        return {
+          success: true,
+          user: data.user as AdminUser,
+        };
+      }
+
+      if (response.status === 403) {
+        if (data.error === 'inactive') {
+          return {
+            success: false,
+            error: 'Your admin account is inactive.',
+            status: 403,
+          };
+        }
+        return {
+          success: false,
+          error: 'Your account is not authorized for admin access.',
+          status: 403,
+        };
+      }
+
+      if (response.status === 401) {
+        return {
+          success: false,
+          error: 'Authentication required. No valid Netlify Identity session found.',
+          status: 401,
+        };
+      }
+
+      return {
+        success: false,
+        error: data.message || 'Failed to verify admin authorization.',
+        status: response.status,
+      };
+    } catch (err) {
+      console.error('Error verifying admin authorization with database:', err);
+      return {
+        success: false,
+        error: 'Unable to connect to authorization server. Please try again.',
+      };
+    }
+  }
+
+  /**
+   * Translates a Netlify Identity User object into a baseline AdminUser model
+   */
+  public mapNetlifyUserToAdminUser(user: NetlifyUser, roleOverride?: UserRole): AdminUser {
     const roles = user.roles || (user.role ? [user.role] : []);
-    const isAdmin = roles.includes('admin') || roles.includes('Admin');
+    const isAdmin = roleOverride ? roleOverride === 'admin' : (roles.includes('admin') || roles.includes('Admin'));
     const role: UserRole = isAdmin ? 'admin' : 'contributor';
     
     return {
       id: user.id,
       name: user.name || user.email?.split('@')[0] || 'Parish Staff',
-      email: user.email || 'staff@cubadiocese.ph',
+      email: user.email || '',
       role,
       title: isAdmin ? 'Cathedral Administrator' : 'Parish Pastoral Staff',
       status: 'Active',
@@ -69,6 +171,7 @@ class AuthService {
   /**
    * Initializes auth handling on app load.
    * Processes #invite_token=..., #recovery_token=..., #confirmation_token=... from URLs.
+   * Clears token hashes from URL and history immediately to avoid loops on refresh.
    */
   async initAuth(): Promise<AuthCallbackInfo | null> {
     if (this.initialized && this.initialCallbackResult) {
@@ -81,13 +184,21 @@ class AuthService {
     let explicitInviteToken: string | null = null;
     let explicitRecoveryToken: string | null = null;
 
-    // Detect hash tokens before handleAuthCallback potentially clears them
-    if (hash) {
+    if (hash && !this.inviteHandled) {
       const matchInvite = hash.match(/invite_token=([^&]+)/);
-      if (matchInvite) explicitInviteToken = matchInvite[1];
+      if (matchInvite) {
+        explicitInviteToken = matchInvite[1];
+      }
 
       const matchRecovery = hash.match(/recovery_token=([^&]+)/);
-      if (matchRecovery) explicitRecoveryToken = matchRecovery[1];
+      if (matchRecovery) {
+        explicitRecoveryToken = matchRecovery[1];
+      }
+
+      // Immediately clear the hash from browser address bar & history to prevent loops
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     }
 
     try {
@@ -104,36 +215,39 @@ class AuthService {
         }
 
         if (callbackResult.type === 'recovery') {
-          const mappedUser = callbackResult.user ? this.mapNetlifyUserToAdminUser(callbackResult.user) : null;
-          if (mappedUser) {
-            this.setSession(mappedUser, 'netlify-identity', true);
-          }
           this.initialCallbackResult = {
             type: 'recovery',
             token: explicitRecoveryToken || '',
-            user: mappedUser,
           };
           return this.initialCallbackResult;
         }
 
         if (callbackResult.type === 'confirmation' || callbackResult.type === 'oauth') {
-          const user = callbackResult.user ? this.mapNetlifyUserToAdminUser(callbackResult.user) : null;
-          if (user) {
-            this.setSession(user, 'netlify-identity', true);
+          // Verify user authorization with database
+          const authRes = await this.fetchAdminAuthorization();
+          if (authRes.success && authRes.user) {
+            this.setSession(authRes.user, true);
+            this.initialCallbackResult = {
+              type: callbackResult.type,
+              user: authRes.user,
+            };
+            return this.initialCallbackResult;
+          } else {
+            await this.logout();
+            this.initialCallbackResult = {
+              type: callbackResult.type,
+              error: authRes.error || 'Your account is not authorized for admin access.',
+            };
+            return this.initialCallbackResult;
           }
-          this.initialCallbackResult = {
-            type: callbackResult.type,
-            user,
-          };
-          return this.initialCallbackResult;
         }
       }
     } catch (err: unknown) {
       console.warn('Netlify Identity auth callback check notice:', err);
     }
 
-    // Fallback if hash contained invite token but client was not initialized
-    if (explicitInviteToken) {
+    // Fallback if hash contained invite token
+    if (explicitInviteToken && !this.inviteHandled) {
       this.initialCallbackResult = {
         type: 'invite',
         token: explicitInviteToken,
@@ -151,16 +265,22 @@ class AuthService {
       return this.initialCallbackResult;
     }
 
+    // Check if there is an active session
+    await this.validateAndSyncSession();
+
     this.initialized = true;
     return null;
   }
 
-  public setSession(user: AdminUser, provider: 'netlify-identity' | 'mock-dev', rememberMe = true) {
+  /**
+   * Sets the verified admin user session in browser storage
+   */
+  public setSession(user: AdminUser, rememberMe = true) {
     const session: AuthSession = {
       user,
-      token: `auth-${provider}-${user.id}-${Date.now()}`,
+      token: `auth-netlify-${user.id}-${Date.now()}`,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-      provider,
+      provider: 'netlify-identity',
     };
     const storage = rememberMe ? localStorage : sessionStorage;
     storage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
@@ -183,49 +303,80 @@ class AuthService {
     return null;
   }
 
-  getCurrentUser(): AdminUser | null {
+  public getCurrentUser(): AdminUser | null {
     const session = this.getSession();
     return session ? session.user : null;
   }
 
-  /**
-   * Asynchronously checks active Netlify Identity session if present in browser
-   */
-  async syncNetlifyUser(): Promise<AdminUser | null> {
-    try {
-      const isAuth = await isNetlifyAuthenticated();
-      if (isAuth) {
-        const netlifyUser = await getNetlifyUser();
-        if (netlifyUser) {
-          const user = this.mapNetlifyUserToAdminUser(netlifyUser);
-          this.setSession(user, 'netlify-identity', true);
-          return user;
-        }
-      }
-    } catch {
-      // Ignore if offline
-    }
-    return this.getCurrentUser();
-  }
-
-  isAuthenticated(): boolean {
+  public isAuthenticated(): boolean {
     return this.getCurrentUser() !== null;
   }
 
-  getUserRole(): UserRole | null {
+  public getUserRole(): UserRole | null {
     const user = this.getCurrentUser();
     return user ? user.role : null;
   }
 
   /**
-   * Completes account activation by setting a password using an invite token
+   * Validates active Netlify Identity session against `admin_users` table in database
    */
-  async acceptInvite(token: string, password: string): Promise<{ success: boolean; user?: AdminUser; error?: string }> {
+  public async validateAndSyncSession(): Promise<AdminUser | null> {
+    try {
+      const isAuth = await isNetlifyAuthenticated();
+      if (isAuth) {
+        const netlifyUser = await getNetlifyUser();
+        if (netlifyUser) {
+          const authRes = await this.fetchAdminAuthorization();
+          if (authRes.success && authRes.user) {
+            this.setSession(authRes.user, true);
+            return authRes.user;
+          } else {
+            // Logged in to Netlify Identity, but not authorized in admin_users or inactive
+            await this.logout();
+            return null;
+          }
+        }
+      }
+    } catch {
+      // Ignore if offline
+    }
+
+    const session = this.getSession();
+    return session ? session.user : null;
+  }
+
+  /**
+   * Completes account activation by setting a password using an invite token.
+   * Then authorizes against admin_users database.
+   */
+  async acceptInvite(token: string, password: string): Promise<AuthResult> {
+    this.inviteHandled = true;
+    this.initialCallbackResult = null;
+
+    // Clean hash from URL and history immediately
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+
     try {
       const user = await netlifyAcceptInvite(token, password);
-      const mappedUser = this.mapNetlifyUserToAdminUser(user);
-      this.setSession(mappedUser, 'netlify-identity', true);
-      return { success: true, user: mappedUser };
+      if (!user) {
+        return { success: false, error: 'Failed to activate account with Netlify Identity.' };
+      }
+
+      // Query database for admin_users authorization
+      const authRes = await this.fetchAdminAuthorization();
+      if (authRes.success && authRes.user) {
+        this.setSession(authRes.user, true);
+        return { success: true, user: authRes.user };
+      }
+
+      // If user is authenticated in Netlify Identity but not authorized in admin_users
+      await this.logout();
+      return {
+        success: false,
+        error: authRes.error || 'Your account is not authorized for admin access.',
+      };
     } catch (err: unknown) {
       console.error('Netlify Identity acceptInvite failed:', err);
       let errorMsg = 'Failed to activate account. The invitation link may be invalid or expired.';
@@ -239,61 +390,53 @@ class AuthService {
   }
 
   /**
-   * Logs in using email and password via Netlify Identity.
-   * Gracefully falls back to mock profiles in local dev environment if Netlify Identity is not active.
+   * Real login with Netlify Identity and authorization with admin_users database table.
+   * No mock authentication or hardcoded credentials.
    */
-  async login(emailOrUsername: string, password?: string, rememberMe = true): Promise<{ success: boolean; user?: AdminUser; error?: string }> {
-    if (!emailOrUsername || !emailOrUsername.trim()) {
-      return { success: false, error: 'Please enter your parish staff email or username.' };
+  async login(email: string, password?: string, rememberMe = true): Promise<AuthResult> {
+    if (!email || !email.trim()) {
+      return { success: false, error: 'Please enter your parish staff email.' };
     }
 
-    // 1. Attempt Netlify Identity Login
-    if (password && emailOrUsername.includes('@')) {
-      try {
-        const netlifyUser = await netlifyLogin(emailOrUsername.trim(), password);
-        if (netlifyUser) {
-          const mappedUser = this.mapNetlifyUserToAdminUser(netlifyUser);
-          this.setSession(mappedUser, 'netlify-identity', rememberMe);
-          return { success: true, user: mappedUser };
-        }
-      } catch (err: unknown) {
-        // If AuthError with 400/401/422, credentials were rejected by Netlify Identity
-        if (err instanceof AuthError && (err.status === 400 || err.status === 401 || err.status === 422)) {
-          return { success: false, error: err.message || 'Invalid email or password. Please try again.' };
-        }
-        
-        // If MissingIdentityError or endpoint uncontactable, log and allow dev fallback if in local environment
-        if (err instanceof MissingIdentityError || !(err instanceof AuthError)) {
-          console.info('Netlify Identity endpoint not active on local host; testing development fallback.');
-        }
+    if (!password) {
+      return { success: false, error: 'Please enter your password.' };
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Authenticate with Netlify Identity
+    try {
+      const netlifyUser = await netlifyLogin(cleanEmail, password);
+      if (!netlifyUser) {
+        return { success: false, error: 'Invalid email or password.' };
       }
+
+      // 2. Query admin_users table in Netlify Database via secure Netlify Function
+      const authRes = await this.fetchAdminAuthorization();
+
+      if (authRes.success && authRes.user) {
+        this.setSession(authRes.user, rememberMe);
+        return { success: true, user: authRes.user };
+      }
+
+      // 3. User authenticated in Netlify Identity but failed admin_users authorization
+      await this.logout();
+      return {
+        success: false,
+        error: authRes.error || 'Your account is not authorized for admin access.',
+      };
+    } catch (err: unknown) {
+      console.error('Netlify Identity login error:', err);
+      
+      if (err instanceof AuthError) {
+        if (err.status === 400 || err.status === 401 || err.status === 422) {
+          return { success: false, error: 'Invalid email or password.' };
+        }
+        return { success: false, error: err.message || 'Invalid email or password.' };
+      }
+      
+      return { success: false, error: 'Invalid email or password.' };
     }
-
-    // 2. Development & Evaluation Mock User Fallback
-    const matched = DEV_MOCK_ADMIN_USERS.find(
-      u => u.email.toLowerCase() === emailOrUsername.toLowerCase() ||
-           u.name.toLowerCase().includes(emailOrUsername.toLowerCase())
-    );
-
-    if (matched) {
-      this.setSession(matched, 'mock-dev', rememberMe);
-      return { success: true, user: matched };
-    }
-
-    // Generic demo user
-    const genericUser: AdminUser = {
-      id: 'usr-staff',
-      name: emailOrUsername.includes('@') ? emailOrUsername.split('@')[0] : emailOrUsername,
-      email: emailOrUsername.includes('@') ? emailOrUsername : `${emailOrUsername.toLowerCase()}@cubadiocese.ph`,
-      role: emailOrUsername.toLowerCase().includes('contributor') ? 'contributor' : 'admin',
-      title: 'Parish Administrative Staff',
-      status: 'Active',
-      lastActive: 'Online now',
-      createdDate: new Date().toISOString().split('T')[0],
-    };
-
-    this.setSession(genericUser, 'mock-dev', rememberMe);
-    return { success: true, user: genericUser };
   }
 
   /**
@@ -301,7 +444,7 @@ class AuthService {
    */
   async requestPasswordRecovery(email: string): Promise<{ success: boolean; error?: string }> {
     try {
-      await netlifyRequestPasswordRecovery(email);
+      await netlifyRequestPasswordRecovery(email.trim());
       return { success: true };
     } catch (err: unknown) {
       console.error('Request password recovery error:', err);
@@ -314,12 +457,28 @@ class AuthService {
   /**
    * Redeems a recovery token and updates password
    */
-  async recoverPassword(token: string, newPassword: string): Promise<{ success: boolean; user?: AdminUser; error?: string }> {
+  async recoverPassword(token: string, newPassword: string): Promise<AuthResult> {
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+
     try {
       const user = await netlifyRecoverPassword(token, newPassword);
-      const mappedUser = this.mapNetlifyUserToAdminUser(user);
-      this.setSession(mappedUser, 'netlify-identity', true);
-      return { success: true, user: mappedUser };
+      if (!user) {
+        return { success: false, error: 'Failed to reset password.' };
+      }
+
+      const authRes = await this.fetchAdminAuthorization();
+      if (authRes.success && authRes.user) {
+        this.setSession(authRes.user, true);
+        return { success: true, user: authRes.user };
+      }
+
+      await this.logout();
+      return {
+        success: false,
+        error: authRes.error || 'Your account is not authorized for admin access.',
+      };
     } catch (err: unknown) {
       console.error('Recover password error:', err);
       let errorMsg = 'Failed to reset password. The recovery link may be expired.';
@@ -352,8 +511,11 @@ class AuthService {
     } catch {
       // Ignore if offline
     }
-    sessionStorage.removeItem(AUTH_STORAGE_KEY);
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    this.initialCallbackResult = null;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
   }
 }
 

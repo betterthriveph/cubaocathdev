@@ -1,3 +1,11 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Immaculate Conception Cathedral of Cubao
+ * Admin Login Page - Production Netlify Identity Authentication
+ */
+
 import React, { useState } from 'react';
 import { 
   ShieldCheck, 
@@ -11,7 +19,6 @@ import {
   X
 } from 'lucide-react';
 import { authService } from '../../services/authService';
-import { DEV_MOCK_ADMIN_USERS } from '../../data/mockData';
 import { AdminUser } from '../../types';
 
 interface AdminLoginPageProps {
@@ -19,7 +26,7 @@ interface AdminLoginPageProps {
 }
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState('dennis.soriano@cubadiocese.ph');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -34,8 +41,13 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      setErrorMsg('Please enter your parish staff email or username.');
+    if (!email.trim()) {
+      setErrorMsg('Please enter your parish staff email.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMsg('Please enter your password.');
       return;
     }
 
@@ -47,24 +59,18 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
       if (res.success && res.user) {
         onLoginSuccess(res.user);
       } else {
-        setErrorMsg(res.error || 'Authentication failed. Please verify your credentials.');
+        setErrorMsg(res.error || 'Invalid email or password.');
       }
     } catch {
-      setErrorMsg('An unexpected error occurred. Please try again.');
+      setErrorMsg('Invalid email or password.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleQuickSelect = (user: AdminUser) => {
-    setEmail(user.email);
-    setPassword('parish2026!');
-    setErrorMsg('');
-  };
-
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail) {
+    if (!forgotEmail || !forgotEmail.trim()) {
       setForgotError('Please enter your registered staff email.');
       return;
     }
@@ -127,7 +133,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
 
       </div>
 
-      {/* Main Login Card (Clean Light Mode) */}
+      {/* Main Login Card */}
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-white py-8 px-6 sm:px-10 rounded-3xl border border-slate-200 shadow-xl space-y-6">
           
@@ -150,7 +156,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
                 </div>
                 <input
                   id="admin-email-input"
-                  type="text"
+                  type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -228,34 +234,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
             </button>
           </form>
 
-          {/* Quick Demo Staff Profile Selector */}
-          <div className="pt-4 border-t border-slate-100 space-y-2.5">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block text-center">
-              Quick Select Staff Profile (Development & Evaluation)
-            </span>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {DEV_MOCK_ADMIN_USERS.slice(0, 4).map((user) => (
-                <button
-                  key={user.id}
-                  type="button"
-                  onClick={() => handleQuickSelect(user)}
-                  className={`p-2.5 rounded-xl text-left border text-xs transition-all cursor-pointer ${
-                    email === user.email
-                      ? 'bg-blue-50/90 border-[#0171bb] text-[#0171bb] shadow-xs'
-                      : 'bg-slate-50/80 border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="font-bold truncate text-[11px] text-slate-900">{user.name}</div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-0.5">
-                    <span className="capitalize">{user.role}</span>
-                    <span className="text-[#0171bb] font-mono font-bold text-[9px]">{user.role === 'admin' ? 'FULL CMS' : 'WRITER'}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="text-center pt-2">
             <a
               href="/"
@@ -268,9 +246,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
 
         </div>
 
-        {/* Subdomain Notice */}
+        {/* Subdomain / Security Notice */}
         <p className="text-center text-[11px] text-slate-500 mt-4">
-          Integrated with Netlify Identity for secure staff authentication.
+          Integrated with Netlify Identity & Database authorization for verified parish staff.
         </p>
 
       </div>
@@ -304,7 +282,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
                 <button
                   type="button"
                   onClick={() => setShowForgotModal(false)}
-                  className="mt-2 py-2 px-4 bg-emerald-600 text-white font-bold rounded-xl text-xs"
+                  className="mt-2 py-2 px-4 bg-emerald-600 text-white font-bold rounded-xl text-xs cursor-pointer"
                 >
                   Close
                 </button>

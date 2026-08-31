@@ -59,6 +59,7 @@ import { authService } from '../../services/authService';
 import { LogOut } from 'lucide-react';
 
 interface AdminDashboardProps {
+  currentUser?: AdminUser;
   onBackToWebsite?: () => void;
   onLogout?: () => void;
 }
@@ -109,58 +110,27 @@ const normalizeCertificateRequest = (raw: any): CertificateRequest => ({
   notes: raw?.notes || '',
 });
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToWebsite, onLogout }) => {
-  // User Management & Roles State (Admin vs Contributor)
-  const [users, setUsers] = useState<AdminUser[]>(() => {
-    return [
-      {
-        id: 'usr-001',
-        name: 'Rev. Fr. Dennis Soriano',
-        email: 'dennis.soriano@cubadiocese.ph',
-        role: 'admin',
-        title: 'Cathedral Rector & Administrator',
-        status: 'Active',
-        lastActive: 'Online now',
-        createdDate: '2024-01-15',
-        phone: '+63 920 950 4222'
-      },
-      {
-        id: 'usr-002',
-        name: 'Ma. Teresa Santos',
-        email: 'teresa.santos@cubadiocese.ph',
-        role: 'admin',
-        title: 'Parish Secretariat Administrator',
-        status: 'Active',
-        lastActive: '15 mins ago',
-        createdDate: '2024-03-01',
-        phone: '+63 917 540 1192'
-      },
-      {
-        id: 'usr-003',
-        name: 'Bro. John Paul Ramirez',
-        email: 'jp.ramirez@cubadiocese.ph',
-        role: 'contributor',
-        title: 'Media & Communications Contributor',
-        status: 'Active',
-        lastActive: '1 hour ago',
-        createdDate: '2025-02-10',
-        phone: '+63 918 334 8871'
-      },
-      {
-        id: 'usr-004',
-        name: 'Sis. Catherine Lim',
-        email: 'cathy.lim@cubadiocese.ph',
-        role: 'contributor',
-        title: 'Parish Youth Ministry Writer',
-        status: 'Active',
-        lastActive: 'Yesterday',
-        createdDate: '2025-05-18',
-        phone: '+63 922 811 4059'
-      }
-    ];
-  });
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: initialUser, onBackToWebsite, onLogout }) => {
+  const activeUser = initialUser || authService.getCurrentUser() || {
+    id: 'usr-staff',
+    name: 'Parish Administrator',
+    email: 'staff@cubadiocese.ph',
+    role: 'admin' as UserRole,
+    status: 'Active',
+    title: 'Cathedral Administrator',
+    createdDate: new Date().toISOString().split('T')[0],
+  };
 
-  const [currentUser, setCurrentUser] = useState<AdminUser>(users[0]);
+  const [currentUser, setCurrentUser] = useState<AdminUser>(activeUser);
+  const [users, setUsers] = useState<AdminUser[]>([activeUser]);
+
+  // Keep state in sync with prop changes
+  useEffect(() => {
+    if (initialUser) {
+      setCurrentUser(initialUser);
+      setUsers([initialUser]);
+    }
+  }, [initialUser]);
 
   // Main Admin Pages (Parish Services Portal, News & Blog CMS, Facilities Media, Email Audit, User Permissions)
   type AdminPage = 'services' | 'cms' | 'facilities' | 'emails' | 'permissions';
@@ -569,39 +539,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToWebsite,
                 <span className="hidden sm:inline">Sign Out</span>
               </button>
               
-              {/* Persona Switcher Selector */}
-              <div className="flex items-center gap-2 bg-[#015f9e] pl-3 pr-2 py-1.5 rounded-xl border border-blue-300/30 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${currentUser.role === 'admin' ? 'bg-emerald-400' : 'bg-purple-400'} animate-pulse`} />
-                  <span className="font-semibold text-white hidden sm:inline">{currentUser.name}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                    currentUser.role === 'admin' ? 'bg-blue-900 text-blue-100' : 'bg-purple-700 text-purple-100'
-                  }`}>
-                    {currentUser.role}
-                  </span>
+              {/* Authenticated Staff Badge */}
+              <div className="flex items-center gap-2.5 bg-[#015f9e] px-3 py-1.5 rounded-xl border border-blue-300/30 text-xs">
+                <span className={`w-2.5 h-2.5 rounded-full ${currentUser.role === 'admin' ? 'bg-emerald-400' : 'bg-purple-400'} animate-pulse shrink-0`} />
+                <div className="flex flex-col text-left">
+                  <span className="font-semibold text-white leading-tight">{currentUser.name}</span>
+                  <span className="text-[10px] text-blue-200 truncate max-w-[150px]">{currentUser.email}</span>
                 </div>
-
-                <select
-                  value={currentUser.id}
-                  onChange={(e) => {
-                    const found = users.find(u => u.id === e.target.value);
-                    if (found) {
-                      setCurrentUser(found);
-                      if (found.role === 'contributor') {
-                        setAdminPage('cms');
-                      }
-                      showToast(`Switched active user to ${found.name} (${found.role.toUpperCase()})`);
-                    }
-                  }}
-                  className="bg-[#014c80] text-white border border-blue-300/40 rounded-lg px-2 py-1 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
-                  title="Switch test user profile"
-                >
-                  {users.map(u => (
-                    <option key={u.id} value={u.id} className="bg-slate-900 text-white">
-                      {u.name} ({u.role.toUpperCase()})
-                    </option>
-                  ))}
-                </select>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                  currentUser.role === 'admin' ? 'bg-blue-900 text-blue-100' : 'bg-purple-700 text-purple-100'
+                }`}>
+                  {currentUser.role}
+                </span>
               </div>
             </div>
           </div>
@@ -769,31 +718,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToWebsite,
         
         {/* Contributor Mode Notice Banner */}
         {currentUser.role === 'contributor' && adminPage === 'cms' && (
-          <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold shrink-0">
-                <Newspaper className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-bold text-purple-950">
-                  Contributor Role Active: News & Blog CMS Portal Access
-                </p>
-                <p className="text-purple-700 text-[11px]">
-                  You have permissions to create, draft, edit, and publish parish news, pastoral letters, and announcements. Church bookings and records are restricted to administrator accounts.
-                </p>
-              </div>
+          <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center gap-3 text-xs">
+            <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold shrink-0">
+              <Newspaper className="w-4 h-4" />
             </div>
-            <button
-              onClick={() => {
-                const adminUser = users.find(u => u.role === 'admin') || users[0];
-                setCurrentUser(adminUser);
-                setAdminPage('services');
-                showToast(`Switched to Administrator profile: ${adminUser.name}`);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] shrink-0 transition-colors cursor-pointer"
-            >
-              Switch to Admin Mode
-            </button>
+            <div>
+              <p className="font-bold text-purple-950">
+                Contributor Role Active: News & Blog CMS Portal Access
+              </p>
+              <p className="text-purple-700 text-[11px]">
+                You have permissions to create, draft, edit, and publish parish news, pastoral letters, and announcements. Church bookings and records are restricted to administrator accounts.
+              </p>
+            </div>
           </div>
         )}
 
@@ -1711,18 +1647,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToWebsite,
                 </div>
                 <h3 className="font-cathedral text-xl font-bold text-slate-900">Administrator Access Required</h3>
                 <p className="text-xs text-slate-600">
-                  User Permissions and role allocations can only be configured by Administrator accounts.
+                  User permissions and staff access roles can only be configured by full Cathedral Administrator accounts.
                 </p>
-                <button
-                  onClick={() => {
-                    const admin = users.find(u => u.role === 'admin') || users[0];
-                    setCurrentUser(admin);
-                    showToast(`Switched to Administrator profile: ${admin.name}`);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white text-xs font-bold transition-colors"
-                >
-                  Switch to Admin Account
-                </button>
               </div>
             )}
           </div>
