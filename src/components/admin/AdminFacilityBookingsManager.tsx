@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { facilityService } from '../../services/facilityService';
 import { Facility, FacilityInquiry, FacilityReservation } from '../../types';
+import { AdminBookingCalendar } from './AdminBookingCalendar';
 
 interface AdminFacilityBookingsManagerProps {
   showToast: (msg: string) => void;
@@ -615,6 +616,20 @@ export const AdminFacilityBookingsManager: React.FC<AdminFacilityBookingsManager
             </table>
           </div>
         </div>
+      )}
+ 
+      {/* 3. CALENDAR TAB (Live synchronized with Netlify DB, active holds, submitted proofs, confirmed bookings) */}
+      {activeSubTab === 'calendar' && (
+        <AdminBookingCalendar
+          showToast={showToast}
+          onOpenVerifyModal={(res) => handleOpenVerifyModal(res)}
+          onOpenSendPaymentModal={(res) => handleOpenSendPaymentModal(res)}
+          onOpenAddBooking={() => {
+            // Switch to reservations or open new modal
+            setActiveSubTab('reservations');
+            showToast('Ready to schedule Cathedral reservation.');
+          }}
+        />
       )}
 
       {/* MODAL 1: SEND PAYMENT INSTRUCTIONS VIA RESEND (2-HOUR HOLD) */}

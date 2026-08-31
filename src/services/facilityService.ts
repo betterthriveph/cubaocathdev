@@ -327,6 +327,65 @@ class FacilityService {
   }
 
   /**
+   * Fetches calendar reservations from server-side get-reservations Netlify Function (Admin only)
+   * Automatically excludes expired holds, cancelled, and declined records.
+   */
+  async getReservations(options?: {
+    startDate?: string;
+    endDate?: string;
+    facilityId?: string;
+    status?: string;
+    activeOnly?: boolean;
+  }): Promise<{
+    success: boolean;
+    reservations: FacilityReservation[];
+    calendarBookings: FacilityReservation[];
+    allReservations: FacilityReservation[];
+    error?: string;
+  }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (options?.startDate) queryParams.set('startDate', options.startDate);
+      if (options?.endDate) queryParams.set('endDate', options.endDate);
+      if (options?.facilityId && options.facilityId !== 'all') queryParams.set('facilityId', options.facilityId);
+      if (options?.status && options.status !== 'all') queryParams.set('status', options.status);
+      if (options?.activeOnly) queryParams.set('activeOnly', 'true');
+
+      const url = `/.netlify/functions/get-reservations${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const res = await fetch(url, {
+        headers: this.getAuthHeaders(),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          success: true,
+          reservations: data.reservations || [],
+          calendarBookings: data.calendarBookings || [],
+          allReservations: data.allReservations || [],
+        };
+      }
+      const errData = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        reservations: [],
+        calendarBookings: [],
+        allReservations: [],
+        error: errData.error || `HTTP ${res.status} retrieving reservations`,
+      };
+    } catch (err: any) {
+      console.error('Error fetching reservations:', err);
+      return {
+        success: false,
+        reservations: [],
+        calendarBookings: [],
+        allReservations: [],
+        error: err?.message || 'Network error retrieving reservations.',
+      };
+    }
+  }
+
+  /**
    * Manages inquiry status, quoted price, and admin notes (Admin only)
    */
   async manageInquiry(

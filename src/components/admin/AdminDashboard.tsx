@@ -54,6 +54,7 @@ import { AdminNewsCms } from './AdminNewsCms';
 import { AdminUserSettings } from './AdminUserSettings';
 import { AdminFacilitiesManager } from './AdminFacilitiesManager';
 import { AdminFacilityBookingsManager } from './AdminFacilityBookingsManager';
+import { AdminBookingCalendar } from './AdminBookingCalendar';
 import { AdminEmailLogsViewer } from './AdminEmailLogsViewer';
 import { emailWorkflowService } from '../../services/emailService';
 import { authService } from '../../services/authService';
@@ -237,16 +238,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
         id: r.id,
         referenceCode: r.referenceCode,
         facilityId: (r.facilityId || 'parish-center-multipurpose') as any,
-        facilityName: r.facilityName,
+        facilityName: r.facilityName || 'Cathedral Facility',
         eventName: r.purpose || 'Cathedral Facility Reservation',
-        clientName: r.name,
+        clientName: r.customerName || (r as any).applicantName || r.name || 'Parishioner',
         clientOrganization: 'Private Client',
-        clientEmail: r.email,
-        clientPhone: r.phone,
-        eventDate: r.reservationDate,
+        clientEmail: r.customerEmail || (r as any).applicantEmail || r.email || '',
+        clientPhone: r.phone || '',
+        eventDate: r.reservationDate || (r as any).reservedDate || (r as any).eventDate || '',
         timeSlot: `${r.startTime} – ${r.endTime}`,
         pax: 100,
-        totalAmount: r.amount || r.agreedAmount || 0,
+        totalAmount: r.amount || r.agreedAmount || r.agreedPrice || 0,
         depositAmount: r.depositDue || 0,
         depositStatus: (r.paymentStatus === 'verified' || (r.paymentStatus as any) === 'paid') ? 'Paid' : 'Unpaid',
         status: (r.status === 'confirmed' ? 'Confirmed' : r.status === 'completed' ? 'Completed' : 'Pending Review') as any,
@@ -1345,231 +1346,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser: ini
           </div>
         )}
 
-        {/* 5. BOOKING CALENDAR VIEW (Requested view with Pending, Confirmed, Completed) */}
+        {/* 5. BOOKING CALENDAR VIEW (Live synchronized with Netlify DB, active holds, payment submissions, and confirmed bookings) */}
         {activeTab === 'calendar' && (
-          <div className="space-y-6">
-            
-            {/* Calendar Controls & Status Filter Pills */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                  <button
-                    onClick={prevMonth}
-                    className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-colors"
-                    title="Previous Month"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="font-cathedral font-bold text-slate-900 px-3 text-sm min-w-[140px] text-center">
-                    {monthName}
-                  </span>
-                  <button
-                    onClick={nextMonth}
-                    className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-colors"
-                    title="Next Month"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Status Filter Pills: All, Pending, Confirmed, Completed */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">Status Filter:</span>
-                {(['all', 'Pending', 'Confirmed', 'Completed'] as const).map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => setCalendarStatusFilter(st)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      calendarStatusFilter === st
-                        ? st === 'Pending'
-                          ? 'bg-amber-500 text-white shadow-sm'
-                          : st === 'Confirmed'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : st === 'Completed'
-                          ? 'bg-[#0171bb] text-white shadow-sm'
-                          : 'bg-slate-900 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {st === 'Pending' && <span className="w-2 h-2 rounded-full bg-amber-200" />}
-                    {st === 'Confirmed' && <span className="w-2 h-2 rounded-full bg-emerald-200" />}
-                    {st === 'Completed' && <span className="w-2 h-2 rounded-full bg-blue-200" />}
-                    <span>{st === 'all' ? 'All Items' : st}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Calendar Grid & Side Panel */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Calendar Grid */}
-              <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
-                <div className="grid grid-cols-7 gap-1 text-center font-bold text-slate-400 uppercase tracking-wider text-[10px] pb-2 border-b border-slate-100">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                    <div key={d} className="py-1">{d}</div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-7 gap-2">
-                  {/* Empty cells before month starts */}
-                  {Array.from({ length: startingDay }).map((_, i) => (
-                    <div key={`empty-${i}`} className="h-24 rounded-xl bg-slate-50/50 border border-transparent p-1.5 opacity-30" />
-                  ))}
-
-                  {/* Day cells */}
-                  {Array.from({ length: totalDays }).map((_, i) => {
-                    const dayNum = i + 1;
-                    const dateString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-                    const dayEvents = calendarBookings.filter(b => b.eventDate === dateString);
-                    const isSelected = calendarSelectedDate === dateString;
-
-                    return (
-                      <div
-                        key={dayNum}
-                        onClick={() => setCalendarSelectedDate(dateString)}
-                        className={`h-24 rounded-xl p-1.5 transition-all cursor-pointer border flex flex-col justify-between overflow-hidden ${
-                          isSelected
-                            ? 'bg-blue-50/80 border-[#0171bb] ring-2 ring-[#0171bb]/20 shadow-sm'
-                            : dayEvents.length > 0
-                            ? 'bg-white border-slate-300 hover:border-[#0171bb]'
-                            : 'bg-slate-50/60 border-slate-100 hover:bg-white'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs font-bold ${isSelected ? 'text-[#0171bb]' : 'text-slate-800'}`}>
-                            {dayNum}
-                          </span>
-                          {dayEvents.length > 0 && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700">
-                              {dayEvents.length}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Events Chips in cell */}
-                        <div className="space-y-1 overflow-hidden mt-1">
-                          {dayEvents.slice(0, 2).map((ev) => (
-                            <div
-                              key={ev.id}
-                              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded truncate border ${
-                                ev.status === 'Confirmed'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : ev.status === 'Pending Review'
-                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                  : 'bg-blue-50 text-blue-900 border-blue-200'
-                              }`}
-                              title={`${ev.eventName} (${ev.facilityName})`}
-                            >
-                              {ev.eventName}
-                            </div>
-                          ))}
-                          {dayEvents.length > 2 && (
-                            <div className="text-[8px] font-bold text-slate-400 pl-1">
-                              +{dayEvents.length - 2} more
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Side Panel: Events for Selected Date */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 flex flex-col justify-between">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Schedule Details
-                      </span>
-                      <h3 className="font-cathedral font-bold text-slate-900 text-base">
-                        {calendarSelectedDate || 'No date selected'}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg">
-                      {selectedDateEvents.length} Item(s)
-                    </span>
-                  </div>
-
-                  {selectedDateEvents.length === 0 ? (
-                    <div className="text-center py-12 space-y-2">
-                      <CalendarDays className="w-8 h-8 text-slate-300 mx-auto" />
-                      <p className="text-xs text-slate-500 font-medium">No bookings scheduled on this date.</p>
-                      <p className="text-[11px] text-slate-400">Select another date with registered events or log a new booking.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-                      {selectedDateEvents.map((b) => (
-                        <div
-                          key={b.id}
-                          className="p-3.5 rounded-xl border border-slate-200 hover:border-[#0171bb] transition-all space-y-2 bg-slate-50/50"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="font-bold text-slate-900 text-xs">{b.eventName}</div>
-                              <span className="text-[10px] text-slate-500 font-mono">{b.referenceCode}</span>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 ${
-                              b.status === 'Confirmed'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : b.status === 'Pending Review'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-blue-100 text-blue-900'
-                            }`}>
-                              {b.status}
-                            </span>
-                          </div>
-
-                          <div className="text-[11px] text-slate-600 space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <Building2 className="w-3.5 h-3.5 text-[#0171bb]" />
-                              <span className="font-medium text-slate-800">{b.facilityName}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{b.timeSlot}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Users className="w-3.5 h-3.5 text-slate-400" />
-                              <span>{b.pax} Expected Pax • Client: {b.clientName}</span>
-                            </div>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                            <span className="font-bold text-slate-900 text-xs">₱{b.totalAmount.toLocaleString()}</span>
-                            <button
-                              onClick={() => setSelectedBookingForView(b)}
-                              className="px-2.5 py-1 rounded bg-[#0171bb] hover:bg-[#015f9e] text-white text-[10px] font-bold transition-colors"
-                            >
-                              View Dossier
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 mt-4">
-                  <button
-                    onClick={() => {
-                      setAddFacilityInitialDate(calendarSelectedDate || new Date().toISOString().split('T')[0]);
-                      setIsAddFacilityModalOpen(true);
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-[#0171bb] hover:bg-[#015f9e] text-white text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Book Venue on This Date</span>
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-          </div>
+          <AdminBookingCalendar
+            showToast={showToast}
+            onOpenAddBooking={(date) => {
+              setAddFacilityInitialDate(date || new Date().toISOString().split('T')[0]);
+              setIsAddFacilityModalOpen(true);
+            }}
+          />
         )}
 
         </div>

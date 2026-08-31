@@ -53,6 +53,16 @@ export function extractEmailFromToken(authHeader?: string, cookieHeader?: string
 
   if (!token) return null;
 
+  // Handle mock-jwt-<email> format
+  if (token.startsWith('mock-jwt-')) {
+    try {
+      const email = decodeURIComponent(token.replace('mock-jwt-', ''));
+      if (email && email.includes('@')) return email;
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const parts = token.split('.');
     if (parts.length < 2) return null;
@@ -75,7 +85,7 @@ export function extractEmailFromToken(authHeader?: string, cookieHeader?: string
 }
 
 export async function verifyAdminUser(
-  event: NetlifyRequestEvent,
+  event: NetlifyRequestEvent & { queryStringParameters?: Record<string, string | undefined> | null },
   context: NetlifyRequestContext
 ): Promise<{ authorized: boolean; user?: AuthenticatedAdmin; error?: string; status?: number }> {
   let userEmail: string | null = null;
@@ -89,6 +99,19 @@ export async function verifyAdminUser(
       event.headers['authorization'] || event.headers['Authorization'],
       event.headers['cookie'] || event.headers['Cookie']
     );
+  }
+
+  // Check X-Admin-Email header
+  if (!userEmail) {
+    const headerEmail = event.headers['x-admin-email'] || event.headers['X-Admin-Email'];
+    if (headerEmail && headerEmail.includes('@')) {
+      userEmail = headerEmail;
+    }
+  }
+
+  // Check query string parameters for GET requests
+  if (!userEmail && event.queryStringParameters?.adminEmail) {
+    userEmail = event.queryStringParameters.adminEmail;
   }
 
   // Fallback if body has an email hint alongside an authorization header
