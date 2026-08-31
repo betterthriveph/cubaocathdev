@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ModalProvider } from './context/ModalContext';
 import { ScrollToTop } from './components/layout/ScrollToTop';
 import { Navbar } from './components/layout/Navbar';
@@ -23,7 +23,10 @@ import { ParishCenterFacilityPage } from './components/facilities/ParishCenterFa
 import { NativityChapelFacilityPage } from './components/facilities/NativityChapelFacilityPage';
 import { FacilityDetailPage } from './components/facilities/FacilityDetailPage';
 import { AdminApp } from './components/admin/AdminApp';
+import { SetPasswordPage } from './components/admin/SetPasswordPage';
+import { ResetPasswordPage } from './components/admin/ResetPasswordPage';
 import { NotFoundPage } from './components/layout/NotFoundPage';
+import { authService, AuthCallbackInfo } from './services/authService';
 
 /**
  * Main Layout Shell
@@ -33,6 +36,61 @@ import { NotFoundPage } from './components/layout/NotFoundPage';
  */
 function AppContent() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [authAction, setAuthAction] = useState<AuthCallbackInfo | null>(null);
+
+  // Process Netlify Identity tokens on initial application load (#invite_token, #recovery_token, etc.)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function processAuthTokens() {
+      try {
+        const result = await authService.initAuth();
+        if (isMounted && result) {
+          if (result.type === 'invite' || result.type === 'recovery') {
+            setAuthAction(result);
+          } else if (result.type === 'confirmation' || result.type === 'oauth') {
+            navigate('/admin');
+          }
+        }
+      } catch (err) {
+        console.error('Netlify Identity token processing notice:', err);
+      }
+    }
+
+    processAuthTokens();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
+
+  // 1. If an invitation token is detected in URL, present dedicated "Set Your Password" screen
+  if (authAction?.type === 'invite' && authAction.token) {
+    return (
+      <SetPasswordPage 
+        token={authAction.token} 
+        onSuccess={(_user) => {
+          setAuthAction(null);
+          navigate('/admin');
+        }} 
+      />
+    );
+  }
+
+  // 2. If a password recovery token is detected in URL, present "Reset Password" screen
+  if (authAction?.type === 'recovery') {
+    return (
+      <ResetPasswordPage 
+        token={authAction.token} 
+        onSuccess={(_user) => {
+          setAuthAction(null);
+          navigate('/admin');
+        }} 
+      />
+    );
+  }
+
   const isSubdomain = typeof window !== 'undefined' && window.location.hostname.startsWith('admin.');
   const isAdminRoute = location.pathname.startsWith('/admin') || isSubdomain;
 
